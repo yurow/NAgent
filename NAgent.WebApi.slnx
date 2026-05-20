@@ -1,0 +1,12 @@
+<Solution>
+  <Project Path="src/NAgent.Api/NAgent.Api.csproj" />
+  <Project Path="src/NAgent.Application/NAgent.Application.csproj" />
+  <Project Path="src/NAgent.Domain/NAgent.Domain.csproj" />
+  <Project Path="src/NAgent.Infrastructure/NAgent.Infrastructure.csproj" />
+  <Project Path="src/NAgent.Shared/NAgent.Shared.csproj" />
+  <Project Path="src/NAgent.AgentDomain/NAgent.AgentDomain.csproj" />
+  <Project Path="src/NAgent.AgentApplication/NAgent.AgentApplication.csproj" />
+  <Project Path="src/NAgent.AgentInfrastructure/NAgent.AgentInfrastructure.csproj" />
+  <Project Path="tests/NAgent.UnitTests/NAgent.UnitTests.csproj" />
+  <Project Path="tests/NAgent.IntegrationTests/NAgent.IntegrationTests.csproj" />
+</Solution>

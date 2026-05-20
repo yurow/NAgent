@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户登录 - NAgent</title>
+    <link rel="stylesheet" href="/css/login.css">
+</head>
+<body>
+    <div class="container">
+        <div class="login-card">
+            <div class="card-header">
+                <h1>🔐 用户登录</h1>
+                <p>NAgent AI Agent 系统</p>
+            </div>
+
+            <div class="card-body">
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username">用户名</label>
+                        <input type="text" id="username" name="username" placeholder="请输入用户名" required>
+                        <span class="error-message" id="usernameError"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" name="password" placeholder="请输入密码" required>
+                        <span class="error-message" id="passwordError"></span>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            <span class="btn-text">登录</span>
+                            <span class="btn-loading" style="display: none;">
+                                <span class="spinner"></span>
+                                登录中...
+                            </span>
+                        </button>
+                    </div>
+                </form>
+
+                <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
+            </div>
+
+            <div class="card-footer">
+                <p>💡 提示：请使用管理员账号登录系统</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="/js/login.js"></script>
+</body>
+</html>

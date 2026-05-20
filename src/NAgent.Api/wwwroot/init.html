@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统初始化 - NAgent</title>
+    <link rel="stylesheet" href="/css/init.css">
+</head>
+<body>
+    <div class="container">
+        <div class="init-card">
+            <div class="card-header">
+                <h1>🚀 系统初始化</h1>
+                <p>欢迎使用 NAgent AI Agent 系统</p>
+            </div>
+
+            <div class="card-body">
+                <form id="initForm">
+                    <div class="form-group">
+                        <label for="username">管理员用户名</label>
+                        <input type="text" id="username" name="username" placeholder="请输入用户名（3-50个字符）" required minlength="3" maxlength="50">
+                        <span class="error-message" id="usernameError"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">管理员邮箱</label>
+                        <input type="email" id="email" name="email" placeholder="请输入邮箱地址" required>
+                        <span class="error-message" id="emailError"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">管理员密码</label>
+                        <input type="password" id="password" name="password" placeholder="请输入密码（至少6个字符）" required minlength="6">
+                        <span class="error-message" id="passwordError"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirmPassword">确认密码</label>
+                        <input type="password" id="confirmPassword" name="confirmPassword" placeholder="请再次输入密码" required minlength="6">
+                        <span class="error-message" id="confirmPasswordError"></span>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            <span class="btn-text">创建管理员账号</span>
+                            <span class="btn-loading" style="display: none;">
+                                <span class="spinner"></span>
+                                正在初始化...
+                            </span>
+                        </button>
+                    </div>
+                </form>
+
+                <div id="successMessage" class="alert alert-success" style="display: none;">
+                    ✅ 系统初始化成功！即将跳转到登录页面...
+                </div>
+
+                <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
+            </div>
+
+            <div class="card-footer">
+                <p>💡 提示：此操作仅在首次启动时执行，请妥善保管管理员账号信息</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="/js/init.js"></script>
+</body>
+</html>

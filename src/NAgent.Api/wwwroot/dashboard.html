@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>仪表盘 - NAgent</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>🚀 NAgent</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active">
+                    <span class="icon">📊</span>
+                    <span>仪表盘</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <span class="icon">🤖</span>
+                    <span>AI Agent</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <span class="icon">⚙️</span>
+                    <span>模型管理</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <span class="icon">👥</span>
+                    <span>用户管理</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="logoutBtn" class="btn-logout">
+                    <span class="icon">🚪</span>
+                    <span>退出登录</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 顶部导航 -->
+            <header class="top-bar">
+                <div class="user-info">
+                    <span class="username" id="username">加载中...</span>
+                    <span class="badge" id="adminBadge" style="display: none;">管理员</span>
+                </div>
+            </header>
+
+            <!-- 内容区域 -->
+            <div class="content" id="dashboardContent">
+                <div class="welcome-card">
+                    <h1>欢迎使用 NAgent AI Agent 系统</h1>
+                    <p>这是一个基于 DDD 架构的现代化 AI Agent 平台</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🤖</div>
+                        <div class="stat-info">
+                            <h3>AI Agent</h3>
+                            <p>智能对话助手</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🧠</div>
+                        <div class="stat-info">
+                            <h3>多模型支持</h3>
+                            <p>OpenAI / Anthropic</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔒</div>
+                        <div class="stat-info">
+                            <h3>安全可靠</h3>
+                            <p>JWT 认证授权</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-info">
+                            <h3>高性能</h3>
+                            <p>.NET 8.0 驱动</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Agent 聊天区域（默认隐藏） -->
+            <div class="content chat-content" id="agentChatContent" style="display: none;">
+                <div class="chat-container">
+                    <!-- 聊天头部 -->
+                    <div class="chat-header">
+                        <h2>🤖 AI Agent 对话</h2>
+                        <div class="model-selector">
+                            <label for="modelSelect">选择模型：</label>
+                            <select id="modelSelect">
+                                <option value="">默认模型</option>
+                            </select>
+                        </div>
+                        <button id="clearChatBtn" class="btn-clear-chat" title="清空对话">🗑️ 清空</button>
+                    </div>
+
+                    <!-- 聊天消息区域 -->
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message system-message">
+                            <div class="message-avatar">🤖</div>
+                            <div class="message-content">
+                                <p>你好！我是 NAgent AI 助手，有什么可以帮助你的吗？</p>
+                                <span class="message-time">刚刚</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 输入区域 -->
+                    <div class="chat-input-area">
+                        <textarea 
+                            id="chatInput" 
+                            placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)"
+                            rows="3"></textarea>
+                        <button id="sendBtn" class="btn-send">
+                            <span>发送</span>
+                            <span class="icon">➤</span>
+                        </button>
+                    </div>
+
+                    <!-- 加载指示器 -->
+                    <div class="loading-indicator" id="loadingIndicator" style="display: none;">
+                        <div class="typing-animation">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <span>AI 正在思考...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 管理员：用户管理区域（默认隐藏） -->
+            <div class="content admin-content" id="adminContent" style="display: none;">
+                <div class="admin-panel">
+                    <h2>👥 用户管理</h2>
+                    <div class="user-list" id="userList">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 管理员：模型管理区域（默认隐藏） -->
+            <div class="content admin-content" id="modelManagementContent" style="display: none;">
+                <div class="admin-panel">
+                    <h2>⚙️ LLM 模型管理</h2>
+                    
+                    <!-- 添加提供商按钮 -->
+                    <div class="toolbar">
+                        <button id="addProviderBtn" class="btn-primary">➕ 添加提供商</button>
+                    </div>
+
+                    <!-- 提供商列表 -->
+                    <div class="provider-list-container" id="providerListContainer">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 添加/编辑提供商模态框 -->
+            <div id="providerModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="providerModalTitle">添加 LLM 提供商</h3>
+                        <span class="close-btn" onclick="closeProviderModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="providerForm">
+                            <input type="hidden" id="providerId" />
+                            <div class="form-group">
+                                <label for="providerName">名称 *</label>
+                                <input type="text" id="providerName" required placeholder="例如：OpenAI" />
+                            </div>
+                            <div class="form-group">
+                                <label for="protocolType">协议类型 *</label>
+                                <select id="protocolType" required>
+                                    <option value="1">OpenAI</option>
+                                    <option value="2">Anthropic</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="baseUrl">基础 URL *</label>
+                                <input type="url" id="baseUrl" required placeholder="https://api.openai.com/v1" />
+                            </div>
+                            <div class="form-group">
+                                <label for="apiKey">API Key *</label>
+                                <input type="password" id="apiKey" required placeholder="sk-..." />
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary">保存</button>
+                                <button type="button" class="btn-secondary" onclick="closeProviderModal()">取消</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 添加/编辑模型模态框 -->
+            <div id="modelModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="modelModalTitle">添加模型</h3>
+                        <span class="close-btn" onclick="closeModelModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="modelForm">
+                            <input type="hidden" id="modelProviderId" />
+                            <input type="hidden" id="modelDbId" />
+                            <div class="form-group">
+                                <label for="modelId">模型 ID *</label>
+                                <input type="text" id="modelId" required placeholder="gpt-4" />
+                            </div>
+                            <div class="form-group">
+                                <label for="modelDisplayName">显示名称 *</label>
+                                <input type="text" id="modelDisplayName" required placeholder="GPT-4" />
+                            </div>
+                            <div class="form-group">
+                                <label for="contextWindowSize">上下文窗口大小 *</label>
+                                <input type="number" id="contextWindowSize" required min="1" value="8192" />
+                            </div>
+                            <div class="form-group">
+                                <label for="maxOutputTokens">最大输出 Tokens</label>
+                                <input type="number" id="maxOutputTokens" min="1" value="2048" />
+                            </div>
+                            <div class="form-group">
+                                <label for="defaultTemperature">默认温度 (0-2)</label>
+                                <input type="number" id="defaultTemperature" min="0" max="2" step="0.1" value="0.7" />
+                            </div>
+                            <div class="form-group">
+                                <label for="modelIsEnabled">状态</label>
+                                <select id="modelIsEnabled">
+                                    <option value="true">可用</option>
+                                    <option value="false">不可用</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="modelIsDefault">设为默认模型</label>
+                                <input type="checkbox" id="modelIsDefault" />
+                                <small>如果勾选，将覆盖所有提供商下的其他默认模型（全局唯一）</small>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary" id="modelSubmitBtn">添加</button>
+                                <button type="button" class="btn-secondary" onclick="closeModelModal()">取消</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>
