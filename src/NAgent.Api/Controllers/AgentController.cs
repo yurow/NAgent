@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NAgent.AgentApplication.Features.ExecuteAgent.Commands;
 using NAgent.AgentApplication.Interfaces;
+using NAgent.AgentDomain.Repositories;
 using NAgent.Shared.Responses;
 
 namespace NAgent.Api.Controllers;
@@ -18,11 +19,13 @@ public class AgentController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ILlmClient _llmClient;
+    private readonly IWorkspaceManager _workspaceManager;
 
-    public AgentController(IMediator mediator, ILlmClient llmClient)
+    public AgentController(IMediator mediator, ILlmClient llmClient, IWorkspaceManager workspaceManager)
     {
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _llmClient = llmClient ?? throw new ArgumentNullException(nameof(llmClient));
+        _workspaceManager = workspaceManager ?? throw new ArgumentNullException(nameof(workspaceManager));
     }
 
     /// <summary>
@@ -94,6 +97,72 @@ public class AgentController : ControllerBase
             return;
         }
 
+        // 从 JWT Token 获取当前用户ID
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            Response.StatusCode = 401;
+            await Response.WriteAsJsonAsync(ApiResponse<string>.FailureResponse("无法获取用户信息"), cancellationToken);
+            return;
+        }
+
+        var projectId = Guid.Parse(request.ProjectId);
+
+        // 1. 确保工作目录存在
+        var workspacePath = _workspaceManager.EnsureProjectWorkspace(userId, projectId);
+
+        // 2. 检查是否已初始化（未初始化时走 execute 端点的初始化逻辑）
+        var isInitialized = _workspaceManager.IsInitialized(userId, projectId);
+        if (!isInitialized)
+        {
+            // 未初始化：调用非流式 execute 进行初始化，然后返回
+            var command = new ExecuteAgentCommand(request.SessionId, request.UserInput, request.ProjectId, userId, request.ModelId);
+            var result = await _mediator.Send(command, cancellationToken);
+
+            Response.ContentType = "text/event-stream";
+            Response.Headers.Append("Cache-Control", "no-cache");
+            Response.Headers.Append("Connection", "keep-alive");
+
+            if (result.Success)
+            {
+                // 将初始化回复分段输出模拟流式效果
+                var chunks = SplitIntoChunks(result.Output ?? "", 50);
+                foreach (var chunk in chunks)
+                {
+                    await Response.WriteAsync($"data: {chunk}\n\n", cancellationToken);
+                    await Response.Body.FlushAsync(cancellationToken);
+                    await Task.Delay(30, cancellationToken); // 模拟打字效果
+                }
+            }
+            else
+            {
+                await Response.WriteAsync($"data: ERROR: {result.Output}\n\n", cancellationToken);
+            }
+
+            await Response.WriteAsync("data: [DONE]\n\n", cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+            return;
+        }
+
+        // 3. 已初始化：构建带工作目录上下文的 prompt
+        var specContent = _workspaceManager.ReadSpecFile(userId, projectId);
+        var files = _workspaceManager.GetWorkspaceFiles(userId, projectId);
+
+        var contextPrompt = $@"你是 NAgent AI 助手。你在一个项目的工作目录中协助用户。
+
+当前工作目录: {workspacePath}
+
+工作目录文件列表:
+{string.Join("\n", files)}
+
+项目规范文档 (spec.md):
+{specContent}
+
+用户问题: {request.UserInput}
+
+请基于工作目录上下文回答用户问题。如果用户要求创建或修改文件，请使用文件工具。";
+
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
@@ -101,7 +170,8 @@ public class AgentController : ControllerBase
         try
         {
             await foreach (var chunk in _llmClient.GenerateStreamAsync(
-                request.UserInput,
+                contextPrompt,
+                request.ModelId,
                 cancellationToken: cancellationToken))
             {
                 await Response.WriteAsync($"data: {chunk}\n\n", cancellationToken);
@@ -116,6 +186,19 @@ public class AgentController : ControllerBase
             await Response.WriteAsync($"data: ERROR: {ex.Message}\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// 将文本分割成小块模拟流式输出
+    /// </summary>
+    private List<string> SplitIntoChunks(string text, int chunkSize)
+    {
+        var chunks = new List<string>();
+        for (int i = 0; i < text.Length; i += chunkSize)
+        {
+            chunks.Add(text.Substring(i, Math.Min(chunkSize, text.Length - i)));
+        }
+        return chunks;
     }
 
     /// <summary>
