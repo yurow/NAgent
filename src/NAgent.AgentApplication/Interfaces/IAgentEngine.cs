@@ -42,6 +42,7 @@ public record AgentExecutionResult(
     bool Success,
     string Output,
     string? ToolName = null,
+    string? ModelName = null,
     Dictionary<string, object>? Metadata = null);
 
 /// <summary>

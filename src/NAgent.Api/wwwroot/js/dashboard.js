@@ -236,6 +236,7 @@ function renderProjectList(projects) {
                 </div>
                 <div class="project-card-footer">
                     <button class="btn-primary" onclick="chatWithProject('${project.id}', '${escapeHtml(project.name)}')">💬 聊天</button>
+                    <button class="btn-secondary" onclick="viewProjectMemory('${project.id}', '${escapeHtml(project.name)}')">🧠 查看记忆</button>
                     ${isAdmin ? `<button class="btn-danger" onclick="deleteProjectWithConfirm('${project.id}', '${escapeHtml(project.name)}')">🗑️ 删除</button>` : ''}
                 </div>
             </div>
@@ -272,6 +273,101 @@ function chatWithProject(projectId, projectName) {
     
     // 聚焦输入框
     $('#chatInput').focus();
+}
+
+// 查看项目记忆
+function viewProjectMemory(projectId, projectName) {
+    const token = localStorage.getItem('jwt_token');
+    
+    // 显示加载状态
+    showMemoryModal(projectName, '<p>加载记忆中...</p>');
+    
+    // 获取项目长期记忆摘要
+    $.ajax({
+        url: `/api/memory/project/${projectId}/summary?limit=50`,
+        type: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        success: function(response) {
+            if (response.success && response.data && response.data.length > 0) {
+                displayMemoryContent(response.data);
+            } else {
+                showMemoryModal(projectName, '<p class="empty-memory">暂无记忆内容</p><p class="hint">与 AI Agent 聊天后，记忆会自动保存到这里。</p>');
+            }
+        },
+        error: function() {
+            showMemoryModal(projectName, '<p class="error">加载记忆失败，请稍后重试</p>');
+        }
+    });
+}
+
+// 显示记忆模态框
+function showMemoryModal(projectName, content) {
+    // 如果模态框不存在则创建
+    if ($('#memoryModal').length === 0) {
+        const modalHtml = `
+            <div id="memoryModal" class="modal">
+                <div class="modal-content" style="max-width: 800px; max-height: 80vh;">
+                    <div class="modal-header">
+                        <h2>🧠 项目记忆 - <span id="memoryProjectName"></span></h2>
+                        <button class="modal-close" onclick="closeMemoryModal()">&times;</button>
+                    </div>
+                    <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                        <div id="memoryContent"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn-secondary" onclick="closeMemoryModal()">关闭</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        $('body').append(modalHtml);
+    }
+    
+    $('#memoryProjectName').text(projectName);
+    $('#memoryContent').html(content);
+    $('#memoryModal').show();
+}
+
+// 关闭记忆模态框
+function closeMemoryModal() {
+    $('#memoryModal').hide();
+}
+
+// 显示记忆内容
+function displayMemoryContent(memories) {
+    let html = '<div class="memory-list">';
+    
+    memories.forEach((memory, index) => {
+        const importanceStars = '⭐'.repeat(memory.importance);
+        const categoryLabels = {
+            'General': '通用',
+            'UserPreference': '用户偏好',
+            'ProjectKnowledge': '项目知识',
+            'CodePattern': '代码模式',
+            'ErrorSolution': '错误方案',
+            'Decision': '决策记录',
+            'TaskContext': '任务上下文'
+        };
+        const categoryLabel = categoryLabels[memory.category] || memory.category;
+        
+        html += `
+            <div class="memory-item">
+                <div class="memory-header">
+                    <span class="memory-index">#${index + 1}</span>
+                    <span class="memory-category">${escapeHtml(categoryLabel)}</span>
+                    <span class="memory-importance" title="重要性">${importanceStars}</span>
+                    <span class="memory-time">${new Date(memory.createdAt).toLocaleString('zh-CN')}</span>
+                </div>
+                <div class="memory-summary">${escapeHtml(memory.summary)}</div>
+                <div class="memory-content">${escapeHtml(memory.content)}</div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    $('#memoryContent').html(html);
 }
 
 // 打开项目创建模态框
@@ -633,7 +729,7 @@ function sendMessageNonStream(token, requestData) {
             hideLoading();
 
             if (response.success) {
-                addBotMessage(response.data);
+                addBotMessage(response.data, response.modelName);
             } else {
                 addErrorMessage(response.message || '请求失败');
             }
@@ -666,9 +762,12 @@ function sendMessageNonStream(token, requestData) {
 
 // 流式发送消息
 function sendMessageStream(token, requestData) {
+    // 获取选中的模型名称
+    const selectedModelName = $('#modelSelect option:selected').text() || '默认模型';
+    
     // 创建一个空的机器人消息容器
     const botMessageId = 'bot-msg-' + Date.now();
-    addBotMessageContainer(botMessageId);
+    addBotMessageContainer(botMessageId, selectedModelName);
     
     // 使用 fetch API 进行流式请求
     fetch('/api/agent/execute-stream', {
@@ -752,15 +851,19 @@ function addUserMessage(message) {
     scrollToBottom();
 }
 
-// 添加机器人消息
-function addBotMessage(message) {
+// 添加机器人消息（支持模型标注）
+function addBotMessage(message, modelName) {
     const time = getCurrentTime();
+    const modelBadge = modelName ? `<span class="model-badge" title="使用模型">🧠 ${escapeHtml(modelName)}</span>` : '';
     const html = `
         <div class="message bot-message">
             <div class="message-avatar">🤖</div>
             <div class="message-content">
                 <p>${escapeHtml(message)}</p>
-                <span class="message-time">${time}</span>
+                <div class="message-footer">
+                    <span class="message-time">${time}</span>
+                    ${modelBadge}
+                </div>
             </div>
         </div>
     `;
@@ -768,15 +871,19 @@ function addBotMessage(message) {
     scrollToBottom();
 }
 
-// 添加机器人消息容器（用于流式输出）
-function addBotMessageContainer(messageId) {
+// 添加机器人消息容器（用于流式输出，支持模型标注）
+function addBotMessageContainer(messageId, modelName) {
     const time = getCurrentTime();
+    const modelBadge = modelName ? `<span class="model-badge" title="使用模型">🧠 ${escapeHtml(modelName)}</span>` : '';
     const html = `
         <div class="message bot-message" id="${messageId}">
             <div class="message-avatar">🤖</div>
             <div class="message-content">
                 <p class="streaming-text"></p>
-                <span class="message-time">${time}</span>
+                <div class="message-footer">
+                    <span class="message-time">${time}</span>
+                    ${modelBadge}
+                </div>
             </div>
         </div>
     `;
@@ -1008,34 +1115,71 @@ function showToolsManagement() {
 function loadToolsList() {
     const token = localStorage.getItem('jwt_token');
     $('#toolsListContainer').html('<p>加载中...</p>');
-    
-    // TODO: 当 Tools API 完善后替换为真实 API 调用
-    // $.ajax({
-    //     url: '/api/tools',
-    //     type: 'GET',
-    //     headers: { 'Authorization': `Bearer ${token}` },
-    //     success: function(response) { ... },
-    //     error: function() { ... }
-    // });
 
-    // 临时显示示例数据
-    setTimeout(function() {
-        let html = '<div class="provider-list">';
+    $.ajax({
+        url: '/api/tools',
+        type: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+        success: function(response) {
+            if (response.success && response.data && response.data.length > 0) {
+                displayToolsList(response.data);
+            } else {
+                $('#toolsListContainer').html('<p class="section-desc">暂无可用工具。</p>');
+            }
+        },
+        error: function(xhr) {
+            let msg = '加载工具列表失败';
+            if (xhr.status === 401) msg = '登录已过期，请重新登录';
+            $('#toolsListContainer').html(`<p class="section-desc" style="color: #f44336;">${msg}</p>`);
+        }
+    });
+}
+
+// 显示 Tools 列表
+function displayToolsList(tools) {
+    let html = '<div class="provider-list">';
+
+    tools.forEach(function(tool) {
+        const categoryColor = getToolCategoryColor(tool.category);
+        const securityColor = getSecurityColor(tool.securityLevel);
+
         html += `
             <div class="provider-card">
-                <h3>code_linter</h3>
-                <p><strong>分类:</strong> development</p>
-                <p><strong>安全等级:</strong> <span class="badge" style="background: #4CAF50;">Low</span></p>
-                <p><strong>描述:</strong> 代码风格和质量检查工具</p>
-                <p><strong>参数:</strong> code (string), language (string), rules (string)</p>
-                <p><strong>执行方式:</strong> local</p>
-                <p><strong>来源:</strong> tools/code-linter.yaml</p>
+                <h3>${escapeHtml(tool.name)}</h3>
+                <p><strong>分类:</strong> <span class="badge" style="background: ${categoryColor};">${escapeHtml(tool.category)}</span></p>
+                <p><strong>安全等级:</strong> <span class="badge" style="background: ${securityColor};">${escapeHtml(tool.securityLevel)}</span></p>
+                <p><strong>描述:</strong> ${escapeHtml(tool.description)}</p>
+                <p><strong>来源:</strong> ${escapeHtml(tool.source)}</p>
+                <p><strong>状态:</strong> <span class="badge" style="background: ${tool.isEnabled ? '#4CAF50' : '#f44336'};">${tool.isEnabled ? '启用' : '禁用'}</span></p>
             </div>
         `;
-        html += '</div>';
-        html += '<p class="section-desc" style="margin-top: 16px; color: #888;">更多 Tools 将通过 YAML 配置文件自动加载。配置文件放在 <code>tools/</code> 目录下。</p>';
-        $('#toolsListContainer').html(html);
-    }, 300);
+    });
+
+    html += '</div>';
+    html += `<p class="section-desc" style="margin-top: 16px; color: #888;">共 ${tools.length} 个系统内置工具。工具在项目隔离的工作空间中执行。</p>`;
+    $('#toolsListContainer').html(html);
+}
+
+// 获取工具分类颜色
+function getToolCategoryColor(category) {
+    const colors = {
+        'built-in': '#667eea',
+        'development': '#2196F3',
+        'search': '#FF9800',
+        'file': '#4CAF50',
+        'system': '#9C27B0'
+    };
+    return colors[category] || '#666';
+}
+
+// 获取安全等级颜色
+function getSecurityColor(level) {
+    const colors = {
+        'Low': '#4CAF50',
+        'Medium': '#FF9800',
+        'High': '#f44336'
+    };
+    return colors[level] || '#666';
 }
 
 // ===== Skills 管理 =====

@@ -7,6 +7,7 @@ public class AgentSession
 {
     public Guid Id { get; private set; }
     public string SessionKey { get; private set; }
+    public Guid ProjectId { get; private set; }
     public List<ConversationMessage> Messages { get; private set; }
     public Dictionary<string, string> ContextVariables { get; private set; }
     public DateTime CreatedAt { get; private set; }
@@ -14,16 +15,18 @@ public class AgentSession
 
     private const int MaxMessages = 100; // 最大消息数
 
-    private AgentSession() 
+    private AgentSession()
     {
+        SessionKey = string.Empty;
         Messages = new List<ConversationMessage>();
         ContextVariables = new Dictionary<string, string>();
     }
 
-    public AgentSession(string sessionKey)
+    public AgentSession(string sessionKey, Guid projectId)
     {
         Id = Guid.NewGuid();
         SessionKey = sessionKey ?? throw new ArgumentNullException(nameof(sessionKey));
+        ProjectId = projectId;
         Messages = new List<ConversationMessage>();
         ContextVariables = new Dictionary<string, string>();
         CreatedAt = DateTime.UtcNow;

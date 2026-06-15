@@ -15,19 +15,22 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
     private readonly IPromptFilter _promptFilter;
     private readonly ISandboxResultValidator _resultValidator;
     private readonly IProjectRepository _projectRepository;
+    private readonly ILlmModelRepository _llmModelRepository;
 
     public ExecuteAgentCommandHandler(
         IAgentEngine agentEngine,
         IAgentSessionRepository sessionRepository,
         IPromptFilter promptFilter,
         ISandboxResultValidator resultValidator,
-        IProjectRepository projectRepository)
+        IProjectRepository projectRepository,
+        ILlmModelRepository llmModelRepository)
     {
         _agentEngine = agentEngine ?? throw new ArgumentNullException(nameof(agentEngine));
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _promptFilter = promptFilter ?? throw new ArgumentNullException(nameof(promptFilter));
         _resultValidator = resultValidator ?? throw new ArgumentNullException(nameof(resultValidator));
         _projectRepository = projectRepository ?? throw new ArgumentNullException(nameof(projectRepository));
+        _llmModelRepository = llmModelRepository ?? throw new ArgumentNullException(nameof(llmModelRepository));
     }
 
     public async Task<ExecuteAgentResult> Handle(ExecuteAgentCommand request, CancellationToken cancellationToken)
@@ -78,9 +81,19 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
             // 8. 保存会话
             await _sessionRepository.UpdateAsync(session, cancellationToken);
 
+            // 9. 获取模型名称
+            string? modelName = executionResult.ModelName;
+            if (string.IsNullOrEmpty(modelName) && !string.IsNullOrEmpty(request.ModelId))
+            {
+                var model = await _llmModelRepository.GetByIdAsync(Guid.Parse(request.ModelId), cancellationToken);
+                modelName = model?.DisplayName ?? request.ModelId;
+            }
+
             return new ExecuteAgentResult(
                 executionResult.Success, 
-                executionResult.Output, 
+                executionResult.Output,
+                null,
+                modelName,
                 executionResult.Metadata);
         }
         catch (Exception ex)
@@ -95,7 +108,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         
         if (session == null)
         {
-            session = new AgentSession(sessionKey);
+            session = new AgentSession(sessionKey, projectId);
             await _sessionRepository.AddAsync(session, cancellationToken);
         }
 

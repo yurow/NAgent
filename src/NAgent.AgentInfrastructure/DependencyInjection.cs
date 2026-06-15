@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentInfrastructure.Agents;
 using NAgent.AgentInfrastructure.Agents.LangChain;
@@ -9,9 +10,11 @@ using NAgent.AgentInfrastructure.Sandbox;
 using NAgent.AgentDomain.Repositories;
 using NAgent.AgentDomain.Services;
 using NAgent.AgentDomain.Services.Memory;
+using NAgent.AgentDomain.Services.Tools;
 using NAgent.AgentInfrastructure.Repositories;
 using NAgent.AgentInfrastructure.Services;
 using NAgent.AgentInfrastructure.Parsers;
+using NAgent.AgentInfrastructure.Tools;
 using SqlSugar;
 
 namespace NAgent.AgentInfrastructure;
@@ -82,6 +85,9 @@ public static class DependencyInjection
         // ⭐ 注册 Skills 和 Tools 系统
         RegisterSkillsAndTools(services, configuration);
 
+        // ⭐ 注册内置工具系统
+        RegisterBuiltInTools(services);
+
         return services;
     }
 
@@ -111,5 +117,32 @@ public static class DependencyInjection
             Directory.CreateDirectory(skillsDir);
         if (!Directory.Exists(toolsDir))
             Directory.CreateDirectory(toolsDir);
+    }
+
+    /// <summary>
+    /// 注册内置工具（Web搜索、文件读取、文件写入）
+    /// </summary>
+    private static void RegisterBuiltInTools(IServiceCollection services)
+    {
+        // 注册工具注册表
+        services.AddSingleton<IToolRegistry>(sp =>
+        {
+            var registry = new ToolRegistry();
+
+            // 注册 Web 搜索工具
+            var webSearchLogger = sp.GetService<ILogger<WebSearchTool>>();
+            registry.Register(new WebSearchTool(logger: webSearchLogger));
+
+            // 注册本地文件读取工具
+            var workspaceManager = sp.GetRequiredService<IWorkspaceManager>();
+            var fileReadLogger = sp.GetService<ILogger<LocalFileReadTool>>();
+            registry.Register(new LocalFileReadTool(workspaceManager, fileReadLogger));
+
+            // 注册本地文件写入工具
+            var fileWriteLogger = sp.GetService<ILogger<LocalFileWriteTool>>();
+            registry.Register(new LocalFileWriteTool(workspaceManager, fileWriteLogger));
+
+            return registry;
+        });
     }
 }
