@@ -154,7 +154,12 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
 [初步规划]";
 
         // 4. 调用 LLM 推测项目用途
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var analysisResult = await _llmClient.GenerateAsync(initPrompt, request.ModelId, cancellationToken: cancellationToken);
+        sw.Stop();
+
+        // 记录 LLM 调用
+        _workspaceManager.RecordLlmCall(userId, projectId, "init_analysis", request.ModelId ?? "default", initPrompt, analysisResult, sw.ElapsedMilliseconds);
 
         // 5. 生成 spec.md 内容
         var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
@@ -231,11 +236,16 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         session.AddUserMessage(userInput);
 
         // 4. 执行 Agent
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var executionResult = await _agentEngine.ExecuteAsync(
             session,
             userInput,
             request.ModelId,
             cancellationToken);
+        sw.Stop();
+
+        // 记录 LLM 调用
+        _workspaceManager.RecordLlmCall(userId, projectId, "chat", request.ModelId ?? "default", userInput, executionResult.Output, sw.ElapsedMilliseconds);
 
         // 5. 如果使用了工具，校验结果
         if (executionResult.ToolName != null && !executionResult.Success)

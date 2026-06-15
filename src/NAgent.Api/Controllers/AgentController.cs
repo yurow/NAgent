@@ -169,20 +169,31 @@ public class AgentController : ControllerBase
 
         try
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var fullResponse = new System.Text.StringBuilder();
+
             await foreach (var chunk in _llmClient.GenerateStreamAsync(
                 contextPrompt,
                 request.ModelId,
                 cancellationToken: cancellationToken))
             {
+                fullResponse.Append(chunk);
                 await Response.WriteAsync($"data: {chunk}\n\n", cancellationToken);
                 await Response.Body.FlushAsync(cancellationToken);
             }
+
+            sw.Stop();
+
+            // 记录 LLM 调用
+            _workspaceManager.RecordLlmCall(userId, projectId, "chat_stream", request.ModelId ?? "default", contextPrompt, fullResponse.ToString(), sw.ElapsedMilliseconds);
 
             await Response.WriteAsync("data: [DONE]\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
         }
         catch (Exception ex)
         {
+            // 记录错误
+            _workspaceManager.RecordLlmCall(userId, projectId, "chat_stream_error", request.ModelId ?? "default", contextPrompt, "", 0, ex.Message);
             await Response.WriteAsync($"data: ERROR: {ex.Message}\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
         }

@@ -60,7 +60,8 @@ public static class DependencyInjection
         // 注册工作空间管理器（Singleton）
         services.AddSingleton<IWorkspaceManager>(sp =>
         {
-            var workspacePath = configuration["Workspace:BasePath"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "NAgent", "workspace");
+            var workspacePath = configuration["Workspace:BasePath"]
+                ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "workspace");
             return new WorkspaceManager(workspacePath);
         });
 

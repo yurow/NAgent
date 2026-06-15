@@ -237,4 +237,54 @@ public class WorkspaceManager : IWorkspaceManager
             .Select(f => f.Replace(projectPath, "").TrimStart(Path.DirectorySeparatorChar))
             .ToList();
     }
+
+    /// <summary>
+    /// 获取项目记忆目录路径（临时记忆，按日期组织）
+    /// 目录结构: workspace/{userId}/{projectId}/memory/
+    /// </summary>
+    public string GetMemoryDirectory(Guid userId, Guid projectId)
+    {
+        var projectPath = GetProjectWorkspacePath(userId, projectId);
+        var memoryPath = Path.Combine(projectPath, "memory");
+        Directory.CreateDirectory(memoryPath);
+        return memoryPath;
+    }
+
+    /// <summary>
+    /// 记录 LLM 调用到记忆文件（以日期结尾的 JSONL 文件）
+    /// 每天一个文件，每行一条记录（JSONL 格式便于追加）
+    /// </summary>
+    public void RecordLlmCall(Guid userId, Guid projectId, string callType, string modelId, string prompt, string response, long durationMs, string? errorMessage = null)
+    {
+        try
+        {
+            var memoryDir = GetMemoryDirectory(userId, projectId);
+            var dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            var filePath = Path.Combine(memoryDir, $"llm-calls-{dateStr}.jsonl");
+
+            var record = new
+            {
+                timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss:sss") + " UTC",
+                call_type = callType,
+                model_id = modelId,
+                prompt_length = prompt?.Length ?? 0,
+                prompt_preview = prompt != null && prompt.Length > 500 ? prompt[..500] + "...[截断]" : prompt,
+                response_length = response?.Length ?? 0,
+                response_preview = response != null && response.Length > 1000 ? response[..1000] + "...[截断]" : response,
+                duration_ms = durationMs,
+                error = errorMessage,
+                project_id = projectId,
+                user_id = userId
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(record);
+            var line = json + "\n";
+
+            File.AppendAllText(filePath, line);
+        }
+        catch
+        {
+            // 记录失败不影响主流程
+        }
+    }
 }

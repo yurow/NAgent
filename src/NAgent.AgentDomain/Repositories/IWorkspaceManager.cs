@@ -64,4 +64,14 @@ public interface IWorkspaceManager
     /// 获取工作目录下的文件列表
     /// </summary>
     List<string> GetWorkspaceFiles(Guid userId, Guid projectId);
+
+    /// <summary>
+    /// 获取项目记忆目录路径（临时记忆，按日期组织）
+    /// </summary>
+    string GetMemoryDirectory(Guid userId, Guid projectId);
+
+    /// <summary>
+    /// 记录 LLM 调用到记忆文件（以日期结尾的 JSON 文件）
+    /// </summary>
+    void RecordLlmCall(Guid userId, Guid projectId, string callType, string modelId, string prompt, string response, long durationMs, string? errorMessage = null);
 }
