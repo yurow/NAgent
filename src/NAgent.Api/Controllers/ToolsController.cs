@@ -1,13 +1,14 @@
-using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NAgent.AgentDomain.Repositories;
+using NAgent.AgentDomain.Services;
 using NAgent.AgentDomain.Services.Tools;
 using NAgent.Shared.Responses;
 
 namespace NAgent.Api.Controllers;
 
 /// <summary>
-/// 工具管理 API - 查询系统内置工具
+/// 工具管理 API - 查询内置工具和 YAML 配置工具
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -15,30 +16,61 @@ namespace NAgent.Api.Controllers;
 public class ToolsController : ControllerBase
 {
     private readonly IToolRegistry _toolRegistry;
+    private readonly IToolDefinitionRepository _toolDefinitionRepository;
+    private readonly IToolLoader _toolLoader;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<ToolsController> _logger;
 
-    public ToolsController(IToolRegistry toolRegistry, ILogger<ToolsController> logger)
+    public ToolsController(
+        IToolRegistry toolRegistry,
+        IToolDefinitionRepository toolDefinitionRepository,
+        IToolLoader toolLoader,
+        IConfiguration configuration,
+        ILogger<ToolsController> logger)
     {
         _toolRegistry = toolRegistry;
+        _toolDefinitionRepository = toolDefinitionRepository;
+        _toolLoader = toolLoader;
+        _configuration = configuration;
         _logger = logger;
     }
 
     /// <summary>
-    /// 获取所有可用工具列表
+    /// 获取所有可用工具列表（内置工具 + YAML 配置工具）
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(ApiResponse<List<ToolInfoDto>>), StatusCodes.Status200OK)]
-    public IActionResult GetAllTools()
+    public async Task<IActionResult> GetAllTools(CancellationToken cancellationToken)
     {
-        var tools = _toolRegistry.GetAllTools();
-        var dtos = tools.Select(t => new ToolInfoDto(
-            t.ToolName,
-            t.Description,
-            "built-in",
-            "Low",
-            "system",
-            true
-        )).ToList();
+        var dtos = new List<ToolInfoDto>();
+
+        // 1. 添加内置工具（从 ToolRegistry）
+        var builtInTools = _toolRegistry.GetAllTools();
+        foreach (var tool in builtInTools)
+        {
+            dtos.Add(new ToolInfoDto(
+                tool.ToolName,
+                tool.Description,
+                "built-in",
+                "Low",
+                "system",
+                true
+            ));
+        }
+
+        // 2. 添加 YAML 配置工具（从 ToolDefinitionRepository）
+        var yamlTools = await _toolDefinitionRepository.GetAllAsync(cancellationToken);
+        foreach (var tool in yamlTools)
+        {
+            dtos.Add(new ToolInfoDto(
+                tool.Name,
+                tool.Description,
+                tool.Category,
+                tool.SecurityLevel.ToString(),
+                $"tools/{tool.FilePath}",
+                tool.IsEnabled
+            ));
+        }
 
         return Ok(ApiResponse<List<ToolInfoDto>>.SuccessResponse(dtos));
     }
@@ -49,22 +81,76 @@ public class ToolsController : ControllerBase
     [HttpGet("{name}")]
     [ProducesResponseType(typeof(ApiResponse<ToolInfoDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public IActionResult GetTool(string name)
+    public async Task<IActionResult> GetTool(string name, CancellationToken cancellationToken)
     {
-        var tool = _toolRegistry.GetTool(name);
-        if (tool == null)
+        // 先查内置工具
+        var builtIn = _toolRegistry.GetTool(name);
+        if (builtIn != null)
+        {
+            var dto = new ToolInfoDto(
+                builtIn.ToolName,
+                builtIn.Description,
+                "built-in",
+                "Low",
+                "system",
+                true
+            );
+            return Ok(ApiResponse<ToolInfoDto>.SuccessResponse(dto));
+        }
+
+        // 再查 YAML 工具
+        var yamlTool = await _toolDefinitionRepository.GetByNameAsync(name, cancellationToken);
+        if (yamlTool == null)
             return NotFound(ApiResponse.FailureResponse($"工具 '{name}' 不存在"));
 
-        var dto = new ToolInfoDto(
-            tool.ToolName,
-            tool.Description,
-            "built-in",
-            "Low",
-            "system",
-            true
+        var yamlDto = new ToolInfoDto(
+            yamlTool.Name,
+            yamlTool.Description,
+            yamlTool.Category,
+            yamlTool.SecurityLevel.ToString(),
+            $"tools/{yamlTool.FilePath}",
+            yamlTool.IsEnabled
         );
 
-        return Ok(ApiResponse<ToolInfoDto>.SuccessResponse(dto));
+        return Ok(ApiResponse<ToolInfoDto>.SuccessResponse(yamlDto));
+    }
+
+    /// <summary>
+    /// 重新加载所有 YAML 配置工具
+    /// </summary>
+    [HttpPost("reload")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> ReloadAll(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var toolsDir = _configuration["Tools:Directory"];
+            if (string.IsNullOrEmpty(toolsDir))
+                toolsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools");
+
+            if (!Directory.Exists(toolsDir))
+                return Ok(ApiResponse<int>.SuccessResponse(0, "Tools 目录不存在"));
+
+            var tools = await _toolLoader.LoadFromDirectoryAsync(toolsDir, cancellationToken);
+            int loadedCount = 0;
+
+            foreach (var tool in tools)
+            {
+                var existing = await _toolDefinitionRepository.GetByNameAsync(tool.Name, cancellationToken);
+                if (existing == null)
+                {
+                    await _toolDefinitionRepository.AddAsync(tool, cancellationToken);
+                    loadedCount++;
+                }
+            }
+
+            return Ok(ApiResponse<int>.SuccessResponse(loadedCount, $"成功加载 {loadedCount} 个新工具，共扫描 {tools.Count} 个工具定义"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "重新加载 Tools 失败");
+            return StatusCode(500, ApiResponse.FailureResponse($"重新加载失败: {ex.Message}"));
+        }
     }
 }
 

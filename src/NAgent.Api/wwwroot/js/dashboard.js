@@ -1182,6 +1182,35 @@ function getSecurityColor(level) {
     return colors[level] || '#666';
 }
 
+// 重新加载所有 Tools
+function reloadAllTools() {
+    const token = localStorage.getItem('jwt_token');
+    $('#toolsListContainer').html('<p>正在重新加载 Tools...</p>');
+
+    $.ajax({
+        url: '/api/tools/reload',
+        type: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        success: function(response) {
+            if (response.success) {
+                alert(response.message || '重新加载完成');
+                loadToolsList();
+            } else {
+                alert('重新加载失败: ' + (response.message || '未知错误'));
+                loadToolsList();
+            }
+        },
+        error: function(xhr) {
+            let msg = '重新加载失败';
+            if (xhr.status === 401) msg = '登录已过期，请重新登录';
+            else if (xhr.status === 403) msg = '只有管理员可以执行此操作';
+            else if (xhr.responseJSON && xhr.responseJSON.message) msg = xhr.responseJSON.message;
+            alert(msg);
+            loadToolsList();
+        }
+    });
+}
+
 // ===== Skills 管理 =====
 
 // 显示 Skills 管理页面

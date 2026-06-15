@@ -108,6 +108,9 @@ public static class DependencyInjection
         services.AddSingleton<ISkillRepository, InMemorySkillRepository>();
         services.AddSingleton<IToolDefinitionRepository, InMemoryToolDefinitionRepository>();
 
+        // 注册自动加载服务
+        services.AddSingleton<SkillsAndToolsAutoLoader>();
+
         // 注册初始化服务（启动时自动加载）
         var skillsDir = configuration["Skills:Directory"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "skills");
         var toolsDir = configuration["Tools:Directory"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools");

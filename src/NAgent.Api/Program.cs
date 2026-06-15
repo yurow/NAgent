@@ -138,4 +138,11 @@ using (var scope = app.Services.CreateScope())
     await initializer.InitializeAsync();
 }
 
+// ⭐ 自动加载 Skills 和 Tools 文件
+using (var scope = app.Services.CreateScope())
+{
+    var autoLoader = scope.ServiceProvider.GetRequiredService<NAgent.AgentInfrastructure.Services.SkillsAndToolsAutoLoader>();
+    await autoLoader.LoadAsync();
+}
+
 app.Run();
