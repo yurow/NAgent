@@ -1,4 +1,5 @@
 using SqlSugar;
+using Microsoft.Extensions.Caching.Memory;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
 
@@ -11,14 +12,21 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
 {
     private readonly ISqlSugarClient _db;
     private readonly ILlmModelRepository _modelRepository;
-    private readonly Dictionary<Guid, LlmProvider> _cache = new();
+    private readonly IMemoryCache _cache;
+    private readonly Dictionary<Guid, LlmProvider> _localCache = new();
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
     private bool _cacheInitialized = false;
 
-    public SqliteLlmProviderRepository(ISqlSugarClient db, ILlmModelRepository modelRepository)
+    private const string AllProvidersCacheKey = "AllProviders";
+
+    public SqliteLlmProviderRepository(
+        ISqlSugarClient db, 
+        ILlmModelRepository modelRepository,
+        IMemoryCache cache)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _modelRepository = modelRepository ?? throw new ArgumentNullException(nameof(modelRepository));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         InitializeDatabase();
     }
 
@@ -39,10 +47,10 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
                 return;
 
             var providers = await _db.Queryable<LlmProvider>().ToListAsync();
-            _cache.Clear();
+            _localCache.Clear();
             foreach (var provider in providers)
             {
-                _cache[provider.Id] = provider;
+                _localCache[provider.Id] = provider;
             }
             _cacheInitialized = true;
         }
@@ -56,7 +64,7 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
     {
         await EnsureCacheInitializedAsync(cancellationToken);
         
-        if (_cache.TryGetValue(id, out var provider))
+        if (_localCache.TryGetValue(id, out var provider))
             return provider;
 
         provider = await _db.Queryable<LlmProvider>().InSingleAsync(id);
@@ -65,7 +73,7 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
             await _cacheLock.WaitAsync(cancellationToken);
             try
             {
-                _cache[id] = provider;
+                _localCache[id] = provider;
             }
             finally
             {
@@ -79,7 +87,7 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
     {
         await EnsureCacheInitializedAsync(cancellationToken);
         
-        var providers = _cache.Values.Where(p => p.IsEnabled).ToList();
+        var providers = _localCache.Values.Where(p => p.IsEnabled).ToList();
         
         // 加载每个提供商的模型
         foreach (var provider in providers)
@@ -95,7 +103,7 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
     public async Task<LlmProvider?> GetByNameAsync(string name, CancellationToken cancellationToken = default)
     {
         await EnsureCacheInitializedAsync(cancellationToken);
-        return _cache.Values.FirstOrDefault(p => p.Name == name);
+        return _localCache.Values.FirstOrDefault(p => p.Name == name);
     }
 
     public async Task AddAsync(LlmProvider provider, CancellationToken cancellationToken = default)
@@ -105,7 +113,8 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache[provider.Id] = provider;
+            _localCache[provider.Id] = provider;
+            InvalidateCache();
         }
         finally
         {
@@ -120,7 +129,8 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache[provider.Id] = provider;
+            _localCache[provider.Id] = provider;
+            InvalidateCache();
         }
         finally
         {
@@ -135,7 +145,8 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache.Remove(id);
+            _localCache.Remove(id);
+            InvalidateCache();
         }
         finally
         {
@@ -148,17 +159,23 @@ public class SqliteLlmProviderRepository : ILlmProviderRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache.Clear();
+            _localCache.Clear();
             var providers = await _db.Queryable<LlmProvider>().ToListAsync();
             foreach (var provider in providers)
             {
-                _cache[provider.Id] = provider;
+                _localCache[provider.Id] = provider;
             }
             _cacheInitialized = true;
+            InvalidateCache();
         }
         finally
         {
             _cacheLock.Release();
         }
+    }
+
+    private void InvalidateCache()
+    {
+        _cache.Remove("AllEnabledProviders");
     }
 }

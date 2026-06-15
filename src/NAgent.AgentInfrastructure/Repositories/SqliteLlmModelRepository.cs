@@ -1,4 +1,5 @@
 using SqlSugar;
+using Microsoft.Extensions.Caching.Memory;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
 
@@ -10,13 +11,15 @@ namespace NAgent.AgentInfrastructure.Repositories;
 public class SqliteLlmModelRepository : ILlmModelRepository
 {
     private readonly ISqlSugarClient _db;
-    private readonly Dictionary<Guid, LlmModel> _cache = new();
+    private readonly IMemoryCache _cache;
+    private readonly Dictionary<Guid, LlmModel> _localCache = new();
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
     private bool _cacheInitialized = false;
 
-    public SqliteLlmModelRepository(ISqlSugarClient db)
+    public SqliteLlmModelRepository(ISqlSugarClient db, IMemoryCache cache)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         InitializeDatabase();
     }
 
@@ -37,10 +40,10 @@ public class SqliteLlmModelRepository : ILlmModelRepository
                 return;
 
             var models = await _db.Queryable<LlmModel>().ToListAsync();
-            _cache.Clear();
+            _localCache.Clear();
             foreach (var model in models)
             {
-                _cache[model.Id] = model;
+                _localCache[model.Id] = model;
             }
             _cacheInitialized = true;
         }
@@ -54,7 +57,7 @@ public class SqliteLlmModelRepository : ILlmModelRepository
     {
         await EnsureCacheInitializedAsync(cancellationToken);
         
-        if (_cache.TryGetValue(id, out var model))
+        if (_localCache.TryGetValue(id, out var model))
             return model;
 
         model = await _db.Queryable<LlmModel>().InSingleAsync(id);
@@ -63,7 +66,7 @@ public class SqliteLlmModelRepository : ILlmModelRepository
             await _cacheLock.WaitAsync(cancellationToken);
             try
             {
-                _cache[id] = model;
+                _localCache[id] = model;
             }
             finally
             {
@@ -76,25 +79,25 @@ public class SqliteLlmModelRepository : ILlmModelRepository
     public async Task<LlmModel?> GetByModelIdAsync(string modelId, Guid providerId, CancellationToken cancellationToken = default)
     {
         await EnsureCacheInitializedAsync(cancellationToken);
-        return _cache.Values.FirstOrDefault(m => m.ModelId == modelId && m.ProviderId == providerId);
+        return _localCache.Values.FirstOrDefault(m => m.ModelId == modelId && m.ProviderId == providerId);
     }
 
     public async Task<List<LlmModel>> GetByProviderIdAsync(Guid providerId, CancellationToken cancellationToken = default)
     {
         await EnsureCacheInitializedAsync(cancellationToken);
-        return _cache.Values.Where(m => m.ProviderId == providerId).ToList();
+        return _localCache.Values.Where(m => m.ProviderId == providerId).ToList();
     }
 
     public async Task<LlmModel?> GetDefaultModelAsync(Guid providerId, CancellationToken cancellationToken = default)
     {
         await EnsureCacheInitializedAsync(cancellationToken);
-        return _cache.Values.FirstOrDefault(m => m.ProviderId == providerId && m.IsDefault);
+        return _localCache.Values.FirstOrDefault(m => m.ProviderId == providerId && m.IsDefault);
     }
 
     public async Task<List<LlmModel>> GetAllEnabledAsync(CancellationToken cancellationToken = default)
     {
         await EnsureCacheInitializedAsync(cancellationToken);
-        return _cache.Values.Where(m => m.IsEnabled).ToList();
+        return _localCache.Values.Where(m => m.IsEnabled).ToList();
     }
 
     public async Task AddAsync(LlmModel model, CancellationToken cancellationToken = default)
@@ -104,7 +107,8 @@ public class SqliteLlmModelRepository : ILlmModelRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache[model.Id] = model;
+            _localCache[model.Id] = model;
+            InvalidateCache();
         }
         finally
         {
@@ -119,7 +123,8 @@ public class SqliteLlmModelRepository : ILlmModelRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache[model.Id] = model;
+            _localCache[model.Id] = model;
+            InvalidateCache();
         }
         finally
         {
@@ -134,7 +139,8 @@ public class SqliteLlmModelRepository : ILlmModelRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache.Remove(id);
+            _localCache.Remove(id);
+            InvalidateCache();
         }
         finally
         {
@@ -147,17 +153,23 @@ public class SqliteLlmModelRepository : ILlmModelRepository
         await _cacheLock.WaitAsync(cancellationToken);
         try
         {
-            _cache.Clear();
+            _localCache.Clear();
             var models = await _db.Queryable<LlmModel>().ToListAsync();
             foreach (var model in models)
             {
-                _cache[model.Id] = model;
+                _localCache[model.Id] = model;
             }
             _cacheInitialized = true;
+            InvalidateCache();
         }
         finally
         {
             _cacheLock.Release();
         }
+    }
+
+    private void InvalidateCache()
+    {
+        _cache.Remove("AllEnabledProviders");
     }
 }

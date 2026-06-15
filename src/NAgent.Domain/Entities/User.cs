@@ -119,6 +119,27 @@ public class User : EntityBase
         UpdatedAt = DateTime.UtcNow;
     }
 
+    public void SetAdmin()
+    {
+        IsAdmin = true;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetNormalUser()
+    {
+        IsAdmin = false;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void UpdatePassword(string passwordHash)
+    {
+        if (string.IsNullOrWhiteSpace(passwordHash))
+            throw new DomainException("密码不能为空");
+
+        PasswordHash = passwordHash;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
     private static bool IsValidEmail(string email)
     {
         try

@@ -106,3 +106,16 @@ Desktop.ini
 # appsettings local
 appsettings.*.json
 !appsettings.json
+
+# SQLite database
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Initialization marker
+.initialized
+
+# Workspace directories
+workspace/
+workspaces/

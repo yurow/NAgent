@@ -4,7 +4,7 @@ using System.Text.Json;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Enums;
-using NAgent.AgentDomain.Repositories;
+using NAgent.AgentDomain.Services;
 
 namespace NAgent.AgentInfrastructure.Llm;
 
@@ -13,19 +13,12 @@ namespace NAgent.AgentInfrastructure.Llm;
 /// </summary>
 public class MultiModelLlmClient : ILlmClient, IDisposable
 {
-    private readonly ILlmProviderRepository _providerRepository;
-    private readonly ILlmModelRepository _modelRepository;
     private readonly HttpClient _httpClient;
-    private string? _currentModelId;
-    private LlmProvider? _currentProvider;
-    private LlmModel? _currentModel;
+    private readonly LlmModelCacheService _cacheService;
 
-    public MultiModelLlmClient(
-        ILlmProviderRepository providerRepository,
-        ILlmModelRepository modelRepository)
+    public MultiModelLlmClient(LlmModelCacheService cacheService)
     {
-        _providerRepository = providerRepository ?? throw new ArgumentNullException(nameof(providerRepository));
-        _modelRepository = modelRepository ?? throw new ArgumentNullException(nameof(modelRepository));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _httpClient = new HttpClient();
     }
 
@@ -36,10 +29,8 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         int maxTokens = 2048,
         CancellationToken cancellationToken = default)
     {
-        // 1. 确定使用的模型
         var (provider, model) = await ResolveModelAsync(modelId, cancellationToken);
 
-        // 2. 根据协议类型调用不同的 API
         return provider.ProtocolType switch
         {
             LlmProtocolType.OpenAI => await CallOpenAiApiAsync(provider, model, prompt, temperature, maxTokens, cancellationToken),
@@ -72,7 +63,7 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
 
     public async Task<List<AvailableModel>> GetAvailableModelsAsync(CancellationToken cancellationToken = default)
     {
-        var providers = await _providerRepository.GetAllEnabledAsync(cancellationToken);
+        var providers = await _cacheService.GetAllEnabledProvidersAsync(cancellationToken);
         var availableModels = new List<AvailableModel>();
 
         foreach (var provider in providers)
@@ -92,16 +83,15 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         return availableModels;
     }
 
-    public void SetCurrentModel(string modelId)
+    public async Task SetCurrentModelAsync(string modelId, CancellationToken cancellationToken = default)
     {
-        _currentModelId = modelId;
-        _currentProvider = null;
-        _currentModel = null;
+        await _cacheService.SetCurrentModelAsync(modelId, cancellationToken);
     }
 
-    public string GetCurrentModel()
+    public async Task<string> GetCurrentModelAsync(CancellationToken cancellationToken = default)
     {
-        return _currentModelId ?? "default";
+        var currentModel = await _cacheService.GetCurrentModelAsync(cancellationToken);
+        return currentModel?.Model.ModelId ?? "default";
     }
 
     public void Dispose()
@@ -118,88 +108,23 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         string? modelId, 
         CancellationToken cancellationToken)
     {
-        // 如果指定了模型 ID，使用指定的
         if (!string.IsNullOrEmpty(modelId))
         {
-            // 如果指定的模型ID与当前缓存的不同，清除缓存
-            if (modelId != _currentModelId)
+            var result = await _cacheService.ResolveModelAsync(modelId, cancellationToken);
+            if (result.HasValue)
             {
-                _currentModelId = modelId;
-                _currentProvider = null;
-                _currentModel = null;
-            }
-        }
-        else
-        {
-            // 如果没有指定模型ID，清除缓存以重新查找默认模型
-            _currentModelId = null;
-            _currentProvider = null;
-            _currentModel = null;
-        }
-
-        // 如果已经缓存了当前模型，直接返回
-        if (_currentProvider != null && _currentModel != null)
-        {
-            return (_currentProvider, _currentModel);
-        }
-
-        // 获取所有启用的提供商
-        var providers = await _providerRepository.GetAllEnabledAsync(cancellationToken);
-        
-        if (!providers.Any())
-        {
-            throw new InvalidOperationException("没有可用的 LLM 提供商");
-        }
-
-        // 查找模型
-        LlmModel? model = null;
-        LlmProvider? provider = null;
-
-        if (!string.IsNullOrEmpty(_currentModelId))
-        {
-            // 查找指定的模型（跨所有提供商）
-            foreach (var p in providers)
-            {
-                model = p.GetModel(_currentModelId);
-                if (model != null && model.IsEnabled)
-                {
-                    provider = p;
-                    break;
-                }
+                return result.Value;
             }
         }
 
-        // 如果没有找到指定模型或没有指定，使用全局默认模型
-        if (model == null)
+        var currentModel = await _cacheService.GetCurrentModelAsync(cancellationToken);
+        if (currentModel.HasValue)
         {
-            // 在所有提供商中查找全局默认模型
-            foreach (var p in providers)
-            {
-                model = p.Models.FirstOrDefault(m => m.IsDefault && m.IsEnabled);
-                if (model != null)
-                {
-                    provider = p;
-                    break;
-                }
-            }
+            return currentModel.Value;
         }
 
-        // 如果还没有找到，使用第一个启用的模型
-        if (model == null)
-        {
-            provider = providers.First();
-            model = provider.Models.FirstOrDefault(m => m.IsEnabled);
-        }
-
-        if (model == null || provider == null)
-        {
-            throw new InvalidOperationException("没有找到可用的模型");
-        }
-
-        _currentProvider = provider;
-        _currentModel = model;
-
-        return (provider, model);
+        var defaultResult = await _cacheService.ResolveModelAsync(null, cancellationToken);
+        return defaultResult ?? throw new InvalidOperationException("没有找到可用的模型");
     }
 
     /// <summary>
@@ -228,7 +153,7 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // OpenAI 兼容协议的 endpoint
-        var url = $"{provider.BaseUrl.TrimEnd('/')}/v1/chat/completions";
+        var url = $"{provider.BaseUrl.TrimEnd('/')}/chat/completions";
 
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
         requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", provider.ApiKey);
@@ -294,7 +219,7 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
     }
 
     /// <summary>
-    /// OpenAI 流式调用（骨架实现）
+    /// OpenAI 流式调用
     /// </summary>
     private async IAsyncEnumerable<string> CallOpenAiStreamAsync(
         LlmProvider provider,
@@ -304,12 +229,80 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         int maxTokens,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // TODO: 实现 OpenAI SSE 流式响应解析
-        yield return "流式响应示例";
+        var request = new
+        {
+            model = model.ModelId,
+            messages = new[]
+            {
+                new { role = "user", content = prompt }
+            },
+            temperature = temperature,
+            max_tokens = Math.Min(maxTokens, model.MaxOutputTokens),
+            stream = true
+        };
+
+        var json = JsonSerializer.Serialize(request);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        var url = $"{provider.BaseUrl.TrimEnd('/')}/chat/completions";
+
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
+        requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", provider.ApiKey);
+        requestMessage.Content = content;
+
+        var response = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6);
+                
+                if (data == "[DONE]")
+                    break;
+
+                JsonDocument? jsonDoc = null;
+                try
+                {
+                    jsonDoc = JsonDocument.Parse(data);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (jsonDoc != null)
+                {
+                    var choices = jsonDoc.RootElement.GetProperty("choices");
+                    
+                    if (choices.GetArrayLength() > 0)
+                    {
+                        var delta = choices[0].GetProperty("delta");
+                        if (delta.TryGetProperty("content", out var contentElement))
+                        {
+                            var contentText = contentElement.GetString();
+                            if (!string.IsNullOrEmpty(contentText))
+                            {
+                                yield return contentText;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
-    /// Anthropic 流式调用（骨架实现）
+    /// Anthropic 流式调用
     /// </summary>
     private async IAsyncEnumerable<string> CallAnthropicStreamAsync(
         LlmProvider provider,
@@ -319,8 +312,78 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         int maxTokens,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // TODO: 实现 Anthropic SSE 流式响应解析
-        yield return "流式响应示例";
+        var request = new
+        {
+            model = model.ModelId,
+            messages = new[]
+            {
+                new { role = "user", content = prompt }
+            },
+            temperature = temperature,
+            max_tokens = Math.Min(maxTokens, model.MaxOutputTokens),
+            stream = true
+        };
+
+        var json = JsonSerializer.Serialize(request);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        var url = $"{provider.BaseUrl.TrimEnd('/')}/v1/messages";
+
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
+        requestMessage.Headers.TryAddWithoutValidation("x-api-key", provider.ApiKey);
+        requestMessage.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+        requestMessage.Content = content;
+
+        var response = await _httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            if (line.StartsWith("data: "))
+            {
+                var data = line.Substring(6);
+                
+                JsonDocument? jsonDoc = null;
+                try
+                {
+                    jsonDoc = JsonDocument.Parse(data);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (jsonDoc != null)
+                {
+                    var type = jsonDoc.RootElement.GetProperty("type").GetString();
+                    
+                    if (type == "content_block_delta")
+                    {
+                        var delta = jsonDoc.RootElement.GetProperty("delta");
+                        if (delta.TryGetProperty("text", out var textElement))
+                        {
+                            var text = textElement.GetString();
+                            if (!string.IsNullOrEmpty(text))
+                            {
+                                yield return text;
+                            }
+                        }
+                    }
+                    else if (type == "message_stop")
+                    {
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     #endregion

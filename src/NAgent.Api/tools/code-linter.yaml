@@ -1,0 +1,38 @@
+name: code_linter
+description: 代码风格和质量检查工具
+category: development
+security_level: low
+
+parameters:
+  - name: code
+    description: 要检查的代码内容
+    type: string
+    required: true
+
+  - name: language
+    description: 编程语言
+    type: string
+    required: false
+    default: "auto"
+    enum:
+      - auto
+      - python
+      - javascript
+      - csharp
+      - java
+      - go
+
+  - name: rules
+    description: 检查规则集
+    type: string
+    required: false
+    default: "standard"
+    enum:
+      - standard
+      - strict
+      - minimal
+
+execution:
+  type: local
+  command: "lint"
+  timeout_seconds: 30

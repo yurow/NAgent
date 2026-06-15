@@ -54,7 +54,7 @@ function checkLoginStatus() {
         // 非管理员隐藏管理相关菜单项
         $('.nav-item').each(function() {
             const text = $(this).text().trim();
-            if (text.includes('模型管理') || text.includes('用户管理')) {
+            if (text.includes('模型管理') || text.includes('用户管理') || text.includes('Tools 管理') || text.includes('Skills 管理')) {
                 $(this).hide();
             }
         });
@@ -115,12 +115,18 @@ function setupNavigation() {
         // 根据菜单切换内容
         if (menuText.includes('仪表盘')) {
             showDashboard();
+        } else if (menuText.includes('项目管理')) {
+            showProjectManagement();
         } else if (menuText.includes('AI Agent')) {
             showAgentChat();
         } else if (menuText.includes('模型管理')) {
             showModelManagement();
         } else if (menuText.includes('用户管理')) {
             showUserManagement();
+        } else if (menuText.includes('Tools 管理')) {
+            showToolsManagement();
+        } else if (menuText.includes('Skills 管理')) {
+            showSkillsManagement();
         }
     });
 }
@@ -154,6 +160,281 @@ function showUserManagement() {
     loadUserList();
 }
 
+// 显示项目管理
+function showProjectManagement() {
+    $('.content').hide();
+    $('#projectManagementContent').show();
+    loadProjectList();
+}
+
+// 加载项目列表
+function loadProjectList() {
+    const token = localStorage.getItem('jwt_token');
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const userId = userInfo.userId || userInfo.id;
+    
+    if (!userId) {
+        $('#projectListContainer').html('<p class="error-message">用户信息无效，请重新登录</p>');
+        return;
+    }
+    
+    $.ajax({
+        url: `/api/projects/user/${userId}`,
+        type: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        success: function(response) {
+            if (response.success && response.data) {
+                renderProjectList(response.data);
+            } else {
+                $('#projectListContainer').html('<p class="error-message">加载项目列表失败</p>');
+            }
+        },
+        error: function() {
+            $('#projectListContainer').html('<p class="error-message">加载项目列表失败</p>');
+        }
+    });
+}
+
+// 渲染项目列表
+function renderProjectList(projects) {
+    const container = $('#projectListContainer');
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const isAdmin = userInfo.isAdmin === true;
+    
+    if (projects.length === 0) {
+        container.html(`
+            <div class="empty-state">
+                <div class="empty-icon">📁</div>
+                <h3>还没有项目</h3>
+                <p>创建您的第一个项目来开始使用 AI Agent</p>
+                <button class="btn-primary" onclick="openProjectModal()">创建项目</button>
+            </div>
+        `);
+        return;
+    }
+
+    let html = '<div class="project-grid">';
+    projects.forEach(project => {
+        const statusClass = project.isActive ? 'active' : 'inactive';
+        const statusText = project.isActive ? '活跃' : '未激活';
+        const lastAccessed = project.lastAccessedAt ? new Date(project.lastAccessedAt).toLocaleString('zh-CN') : '从未访问';
+        
+        html += `
+            <div class="project-card ${statusClass}" data-project-id="${project.id}">
+                <div class="project-card-header">
+                    <h3>${escapeHtml(project.name)}</h3>
+                    <span class="project-status ${statusClass}">${statusText}</span>
+                </div>
+                <div class="project-card-body">
+                    <p class="project-description">${escapeHtml(project.description || '暂无描述')}</p>
+                    <div class="project-meta">
+                        <span>📅 创建于: ${new Date(project.createdAt).toLocaleString('zh-CN')}</span>
+                        <span>🕒 最后访问: ${lastAccessed}</span>
+                    </div>
+                </div>
+                <div class="project-card-footer">
+                    <button class="btn-primary" onclick="chatWithProject('${project.id}', '${escapeHtml(project.name)}')">💬 聊天</button>
+                    ${isAdmin ? `<button class="btn-danger" onclick="deleteProjectWithConfirm('${project.id}', '${escapeHtml(project.name)}')">🗑️ 删除</button>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    container.html(html);
+}
+
+// 带二次确认的项目删除（仅管理员）
+function deleteProjectWithConfirm(projectId, projectName) {
+    if (!confirm(`确定要删除项目「${projectName}」吗？\n\n此操作不可恢复，项目下的所有会话和记忆也将被清除。`)) {
+        return;
+    }
+    // 二次确认
+    if (!confirm(`再次确认：请输入「确定」以删除项目「${projectName}」`)) {
+        return;
+    }
+    deleteProject(projectId);
+}
+
+// 直接跳转到聊天（从项目卡片）
+function chatWithProject(projectId, projectName) {
+    // 切换到 AI Agent 聊天页面
+    showAgentChat();
+    
+    // 设置项目选择器
+    $('#projectSelect').val(projectId);
+    $('#projectSelect').trigger('change');
+    
+    // 添加提示消息
+    addSystemMessage(`已切换到项目：${projectName}`);
+    
+    // 聚焦输入框
+    $('#chatInput').focus();
+}
+
+// 打开项目创建模态框
+function openProjectModal() {
+    $('#projectModal').show();
+    $('#projectForm')[0].reset();
+    $('#projectModalTitle').text('创建新项目');
+}
+
+// 关闭项目模态框
+function closeProjectModal() {
+    $('#projectModal').hide();
+}
+
+// 创建项目
+$('#createProjectBtn').on('click', function() {
+    openProjectModal();
+});
+
+// 项目表单提交
+$('#projectForm').on('submit', function(e) {
+    e.preventDefault();
+    
+    const token = localStorage.getItem('jwt_token');
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const userId = userInfo.userId || userInfo.id;
+    
+    if (!userId) {
+        alert('用户信息无效，请重新登录');
+        return;
+    }
+    
+    const projectData = {
+        name: $('#projectName').val().trim(),
+        description: $('#projectDescription').val().trim(),
+        userId: userId
+    };
+    
+    $.ajax({
+        url: '/api/projects',
+        type: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        data: JSON.stringify(projectData),
+        success: function(response) {
+            if (response.success) {
+                closeProjectModal();
+                loadProjectList();
+                alert('项目创建成功！');
+            } else {
+                alert('项目创建失败：' + response.message);
+            }
+        },
+        error: function(xhr) {
+            const error = xhr.responseJSON || {};
+            alert('项目创建失败：' + (error.message || '未知错误'));
+        }
+    });
+});
+
+// 激活项目
+function activateProject(projectId) {
+    const token = localStorage.getItem('jwt_token');
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const userId = userInfo.userId || userInfo.id;
+    
+    if (!userId) {
+        alert('用户信息无效，请重新登录');
+        return;
+    }
+    
+    $.ajax({
+        url: `/api/projects/${projectId}/activate`,
+        type: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        data: JSON.stringify({ userId: userId }),
+        success: function(response) {
+            if (response.success) {
+                loadProjectList();
+                alert('项目已激活！');
+            } else {
+                alert('项目激活失败：' + response.message);
+            }
+        },
+        error: function(xhr) {
+            const error = xhr.responseJSON || {};
+            alert('项目激活失败：' + (error.message || '未知错误'));
+        }
+    });
+}
+
+// 停用项目
+function deactivateProject(projectId) {
+    if (!confirm('确定要停用此项目吗？')) {
+        return;
+    }
+    
+    const token = localStorage.getItem('jwt_token');
+    
+    $.ajax({
+        url: `/api/projects/${projectId}/deactivate`,
+        type: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        success: function(response) {
+            if (response.success) {
+                loadProjectList();
+                alert('项目已停用！');
+            } else {
+                alert('项目停用失败：' + response.message);
+            }
+        },
+        error: function(xhr) {
+            const error = xhr.responseJSON || {};
+            alert('项目停用失败：' + (error.message || '未知错误'));
+        }
+    });
+}
+
+// 删除项目
+function deleteProject(projectId) {
+    if (!confirm('确定要删除此项目吗？此操作不可恢复！')) {
+        return;
+    }
+    
+    const token = localStorage.getItem('jwt_token');
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const userId = userInfo.userId || userInfo.id;
+    
+    if (!userId) {
+        alert('用户信息无效，请重新登录');
+        return;
+    }
+    
+    $.ajax({
+        url: `/api/projects/${projectId}`,
+        type: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        data: JSON.stringify({ userId: userId }),
+        success: function(response) {
+            if (response.success) {
+                loadProjectList();
+                alert('项目已删除！');
+            } else {
+                alert('项目删除失败：' + response.message);
+            }
+        },
+        error: function(xhr) {
+            const error = xhr.responseJSON || {};
+            alert('项目删除失败：' + (error.message || '未知错误'));
+        }
+    });
+}
+
 // 初始化管理员导航
 function setupAdminNavigation() {
     // 管理员可以看到所有菜单项
@@ -162,20 +443,38 @@ function setupAdminNavigation() {
 // ⭐ 初始化 AI Agent 聊天
 function initAgentChat() {
     let sessionId = generateSessionId();
+    let currentProjectId = null;
 
     // 加载可用模型列表
     loadAvailableModels();
 
+    // 加载用户项目列表
+    loadUserProjectsForChat();
+
+    // 项目切换事件
+    $('#projectSelect').on('change', function() {
+        currentProjectId = $(this).val();
+        if (currentProjectId) {
+            // 切换项目时清空聊天并生成新会话ID
+            clearChat();
+            sessionId = generateSessionId();
+            // 添加项目切换提示
+            addSystemMessage(`已切换到项目：${$(this).find('option:selected').text()}`);
+        }
+    });
+
     // 发送消息按钮点击
     $('#sendBtn').on('click', function() {
-        sendMessage(sessionId);
+        const useStream = $('#streamToggle').prop('checked');
+        sendMessage(sessionId, currentProjectId, useStream);
     });
 
     // Enter 键发送（Shift+Enter 换行）
     $('#chatInput').on('keydown', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            sendMessage(sessionId);
+            const useStream = $('#streamToggle').prop('checked');
+            sendMessage(sessionId, currentProjectId, useStream);
         }
     });
 
@@ -184,6 +483,62 @@ function initAgentChat() {
         clearChat();
         sessionId = generateSessionId(); // 生成新的会话ID
     });
+}
+
+// 加载用户项目列表用于聊天
+function loadUserProjectsForChat() {
+    const token = localStorage.getItem('jwt_token');
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const userId = userInfo.userId || userInfo.id;
+    
+    if (!userId) {
+        console.error('用户信息无效，无法加载项目列表');
+        return;
+    }
+    
+    $.ajax({
+        url: `/api/projects/user/${userId}`,
+        type: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        success: function(response) {
+            if (response.success && response.data) {
+                const select = $('#projectSelect');
+                select.empty();
+                select.append('<option value="">请选择项目</option>');
+                
+                response.data.forEach(project => {
+                    const option = `<option value="${project.id}" ${project.isActive ? 'selected' : ''}>${escapeHtml(project.name)}</option>`;
+                    select.append(option);
+                });
+
+                // 如果有活跃项目，自动选择
+                const activeProject = response.data.find(p => p.isActive);
+                if (activeProject) {
+                    select.val(activeProject.id);
+                }
+            }
+        },
+        error: function() {
+            console.error('加载项目列表失败');
+        }
+    });
+}
+
+// 添加系统消息
+function addSystemMessage(message) {
+    const messageHtml = `
+        <div class="message system-message">
+            <div class="message-avatar">ℹ️</div>
+            <div class="message-content">
+                <p>${escapeHtml(message)}</p>
+                <span class="message-time">刚刚</span>
+            </div>
+        </div>
+    `;
+    $('#chatMessages').append(messageHtml);
+    scrollToBottom();
 }
 
 // 加载可用模型列表
@@ -219,11 +574,17 @@ function generateSessionId() {
 }
 
 // 发送消息
-function sendMessage(sessionId) {
+function sendMessage(sessionId, projectId, useStream = false) {
     const input = $('#chatInput');
     const message = input.val().trim();
 
     if (!message) {
+        return;
+    }
+
+    // 检查是否选择了项目
+    if (!projectId) {
+        addErrorMessage('请先选择一个项目才能发送消息');
         return;
     }
 
@@ -236,9 +597,6 @@ function sendMessage(sessionId) {
     // 添加用户消息到聊天窗口
     addUserMessage(message);
 
-    // 显示加载指示器
-    showLoading();
-
     // 禁用发送按钮
     $('#sendBtn').prop('disabled', true);
 
@@ -246,13 +604,22 @@ function sendMessage(sessionId) {
     const token = localStorage.getItem('jwt_token');
     const requestData = {
         sessionId: sessionId,
-        userInput: message
+        projectId: projectId,
+        userInput: message,
+        modelId: selectedModel || null
     };
-    
-    // 如果选择了模型，添加到请求中
-    if (selectedModel) {
-        requestData.modelId = selectedModel;
+
+    if (useStream) {
+        sendMessageStream(token, requestData);
+    } else {
+        sendMessageNonStream(token, requestData);
     }
+}
+
+// 非流式发送消息
+function sendMessageNonStream(token, requestData) {
+    // 显示加载指示器
+    showLoading();
     
     $.ajax({
         url: '/api/agent/execute',
@@ -297,6 +664,78 @@ function sendMessage(sessionId) {
     });
 }
 
+// 流式发送消息
+function sendMessageStream(token, requestData) {
+    // 创建一个空的机器人消息容器
+    const botMessageId = 'bot-msg-' + Date.now();
+    addBotMessageContainer(botMessageId);
+    
+    // 使用 fetch API 进行流式请求
+    fetch('/api/agent/execute-stream', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+        
+        function readStream() {
+            return reader.read().then(({ done, value }) => {
+                if (done) {
+                    // 启用发送按钮
+                    $('#sendBtn').prop('disabled', false);
+                    return;
+                }
+                
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.substring(6);
+                        
+                        if (data === '[DONE]') {
+                            // 启用发送按钮
+                            $('#sendBtn').prop('disabled', false);
+                            return;
+                        }
+                        
+                        if (data.startsWith('ERROR:')) {
+                            const errorMsg = data.substring(7);
+                            updateBotMessage(botMessageId, fullText);
+                            addErrorMessage(errorMsg);
+                            $('#sendBtn').prop('disabled', false);
+                            return;
+                        }
+                        
+                        fullText += data;
+                        updateBotMessage(botMessageId, fullText);
+                        scrollToBottom();
+                    }
+                }
+                
+                return readStream();
+            });
+        }
+        
+        return readStream();
+    })
+    .catch(error => {
+        console.error('Stream error:', error);
+        addErrorMessage('流式请求失败: ' + error.message);
+        $('#sendBtn').prop('disabled', false);
+    });
+}
+
 // 添加用户消息
 function addUserMessage(message) {
     const time = getCurrentTime();
@@ -327,6 +766,30 @@ function addBotMessage(message) {
     `;
     $('#chatMessages').append(html);
     scrollToBottom();
+}
+
+// 添加机器人消息容器（用于流式输出）
+function addBotMessageContainer(messageId) {
+    const time = getCurrentTime();
+    const html = `
+        <div class="message bot-message" id="${messageId}">
+            <div class="message-avatar">🤖</div>
+            <div class="message-content">
+                <p class="streaming-text"></p>
+                <span class="message-time">${time}</span>
+            </div>
+        </div>
+    `;
+    $('#chatMessages').append(html);
+    scrollToBottom();
+}
+
+// 更新机器人消息（用于流式输出）
+function updateBotMessage(messageId, message) {
+    const $messageContainer = $(`#${messageId}`);
+    if ($messageContainer.length > 0) {
+        $messageContainer.find('.streaming-text').html(escapeHtml(message));
+    }
 }
 
 // 添加错误消息
@@ -422,19 +885,249 @@ function displayUserList(users) {
     }
 
     let html = '<table class="data-table"><thead><tr>';
-    html += '<th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th></tr></thead><tbody>';
+    html += '<th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>';
 
     users.forEach(user => {
+        const roleBtn = user.isAdmin 
+            ? `<button class="btn-small btn-warning" onclick="updateUserRole('${user.id}', false)">取消管理员</button>`
+            : `<button class="btn-small btn-primary" onclick="updateUserRole('${user.id}', true)">设为管理员</button>`;
+        
+        const statusBtn = user.isActive
+            ? `<button class="btn-small btn-danger" onclick="updateUserStatus('${user.id}', false)">禁用</button>`
+            : `<button class="btn-small btn-success" onclick="updateUserStatus('${user.id}', true)">启用</button>`;
+
         html += `<tr>
             <td>${escapeHtml(user.username)}</td>
             <td>${escapeHtml(user.email)}</td>
             <td>${user.isAdmin ? '管理员' : '普通用户'}</td>
             <td>${user.isActive ? '活跃' : '禁用'}</td>
+            <td>
+                ${roleBtn}
+                ${statusBtn}
+                <button class="btn-small btn-secondary" onclick="showResetPassword('${user.id}', '${escapeHtml(user.username)}')">重置密码</button>
+            </td>
         </tr>`;
     });
 
     html += '</tbody></table>';
     $('#userList').html(html);
+}
+
+// 更新用户角色
+function updateUserRole(userId, isAdmin) {
+    const token = localStorage.getItem('jwt_token');
+    $.ajax({
+        url: `/api/users/${userId}/role`,
+        type: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        data: JSON.stringify({ isAdmin: isAdmin }),
+        success: function(response) {
+            if (response.success) {
+                loadUserList();
+            } else {
+                alert('操作失败: ' + response.message);
+            }
+        },
+        error: function() {
+            alert('操作失败');
+        }
+    });
+}
+
+// 更新用户状态
+function updateUserStatus(userId, isActive) {
+    const token = localStorage.getItem('jwt_token');
+    $.ajax({
+        url: `/api/users/${userId}/status`,
+        type: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        data: JSON.stringify({ isActive: isActive }),
+        success: function(response) {
+            if (response.success) {
+                loadUserList();
+            } else {
+                alert('操作失败: ' + response.message);
+            }
+        },
+        error: function() {
+            alert('操作失败');
+        }
+    });
+}
+
+// 显示重置密码对话框
+function showResetPassword(userId, username) {
+    const newPassword = prompt(`请输入用户 "${username}" 的新密码（至少6个字符）:`);
+    if (newPassword && newPassword.length >= 6) {
+        resetUserPassword(userId, newPassword);
+    } else if (newPassword) {
+        alert('密码长度至少为6个字符');
+    }
+}
+
+// 重置用户密码
+function resetUserPassword(userId, newPassword) {
+    const token = localStorage.getItem('jwt_token');
+    $.ajax({
+        url: `/api/users/${userId}/password`,
+        type: 'PUT',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        data: JSON.stringify({ newPassword: newPassword }),
+        success: function(response) {
+            if (response.success) {
+                alert('密码重置成功');
+            } else {
+                alert('密码重置失败: ' + response.message);
+            }
+        },
+        error: function() {
+            alert('密码重置失败');
+        }
+    });
+}
+
+// ===== Tools 管理 =====
+
+// 显示 Tools 管理页面
+function showToolsManagement() {
+    $('.content').hide();
+    $('#toolsManagementContent').show();
+    loadToolsList();
+}
+
+// 加载 Tools 列表
+function loadToolsList() {
+    const token = localStorage.getItem('jwt_token');
+    $('#toolsListContainer').html('<p>加载中...</p>');
+    
+    // TODO: 当 Tools API 完善后替换为真实 API 调用
+    // $.ajax({
+    //     url: '/api/tools',
+    //     type: 'GET',
+    //     headers: { 'Authorization': `Bearer ${token}` },
+    //     success: function(response) { ... },
+    //     error: function() { ... }
+    // });
+
+    // 临时显示示例数据
+    setTimeout(function() {
+        let html = '<div class="provider-list">';
+        html += `
+            <div class="provider-card">
+                <h3>code_linter</h3>
+                <p><strong>分类:</strong> development</p>
+                <p><strong>安全等级:</strong> <span class="badge" style="background: #4CAF50;">Low</span></p>
+                <p><strong>描述:</strong> 代码风格和质量检查工具</p>
+                <p><strong>参数:</strong> code (string), language (string), rules (string)</p>
+                <p><strong>执行方式:</strong> local</p>
+                <p><strong>来源:</strong> tools/code-linter.yaml</p>
+            </div>
+        `;
+        html += '</div>';
+        html += '<p class="section-desc" style="margin-top: 16px; color: #888;">更多 Tools 将通过 YAML 配置文件自动加载。配置文件放在 <code>tools/</code> 目录下。</p>';
+        $('#toolsListContainer').html(html);
+    }, 300);
+}
+
+// ===== Skills 管理 =====
+
+// 显示 Skills 管理页面
+function showSkillsManagement() {
+    $('.content').hide();
+    $('#skillsManagementContent').show();
+    loadSkillsList();
+}
+
+// 加载 Skills 列表
+function loadSkillsList() {
+    const token = localStorage.getItem('jwt_token');
+    $('#skillsListContainer').html('<p>加载中...</p>');
+    
+    $.ajax({
+        url: '/api/skills',
+        type: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+        success: function(response) {
+            if (response.success && response.data) {
+                displaySkillsList(response.data);
+            } else {
+                $('#skillsListContainer').html('<p>暂无 Skills 数据</p>');
+            }
+        },
+        error: function() {
+            // 显示示例数据
+            displaySkillsList([
+                { id: '1', name: 'code-analysis', description: '分析代码质量、结构和潜在问题', category: 'development', version: '1.0.0', isEnabled: true, toolNames: ['code_linter', 'security_scanner'], examples: [] }
+            ]);
+        }
+    });
+}
+
+// 显示 Skills 列表
+function displaySkillsList(skills) {
+    if (!skills || skills.length === 0) {
+        $('#skillsListContainer').html('<p>暂无 Skills。请将 Markdown 文件放入 <code>skills/</code> 目录并点击「重新加载」。</p>');
+        return;
+    }
+
+    let html = '<div class="provider-list">';
+    skills.forEach(skill => {
+        const statusText = skill.isEnabled ? '已启用' : '已禁用';
+        const statusColor = skill.isEnabled ? '#4CAF50' : '#999';
+        const toolsHtml = skill.toolNames && skill.toolNames.length > 0 
+            ? skill.toolNames.map(t => `<span class="badge" style="background: #2196F3; margin-right: 4px;">${escapeHtml(t)}</span>`).join('') 
+            : '<span style="color: #888;">无关联工具</span>';
+        
+        html += `
+            <div class="provider-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>${escapeHtml(skill.name)}</h3>
+                    <span class="badge" style="background: ${statusColor};">${statusText}</span>
+                </div>
+                <p><strong>分类:</strong> ${escapeHtml(skill.category)}</p>
+                <p><strong>版本:</strong> ${escapeHtml(skill.version)}</p>
+                <p><strong>描述:</strong> ${escapeHtml(skill.description)}</p>
+                <p><strong>关联工具:</strong> ${toolsHtml}</p>
+            </div>
+        `;
+    });
+    html += '</div>';
+    $('#skillsListContainer').html(html);
+}
+
+// 重新加载所有 Skills
+function reloadAllSkills() {
+    const token = localStorage.getItem('jwt_token');
+    
+    if (!confirm('确定要重新加载所有 Skills 吗？这将重新读取 skills/ 目录下的所有 Markdown 文件。')) {
+        return;
+    }
+    
+    $.ajax({
+        url: '/api/skills/reload',
+        type: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        success: function(response) {
+            if (response.success) {
+                alert(`成功重新加载 ${response.data} 个 Skills`);
+                loadSkillsList();
+            } else {
+                alert('重新加载失败: ' + response.message);
+            }
+        },
+        error: function() {
+            alert('重新加载失败，请检查服务器日志');
+        }
+    });
 }
 
 // 加载模型列表（管理员）

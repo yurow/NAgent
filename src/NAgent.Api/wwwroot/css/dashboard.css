@@ -357,6 +357,34 @@ body {
     border-color: #667eea;
 }
 
+.chat-input-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.stream-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    color: #666;
+    transition: color 0.3s ease;
+}
+
+.stream-toggle:hover {
+    color: #667eea;
+}
+
+.stream-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #667eea;
+}
+
 .btn-send {
     padding: 12px 24px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -723,6 +751,184 @@ body {
     background: #fff3cd;
     border-radius: 6px;
     font-size: 13px;
+}
+
+/* 项目管理样式 */
+.project-panel {
+    padding: 20px;
+}
+
+.project-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.project-header h2 {
+    margin: 0;
+    color: #333;
+}
+
+.project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.project-card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    transition: all 0.3s ease;
+    border-left: 4px solid #ccc;
+}
+
+.project-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.project-card.active {
+    border-left-color: #4caf50;
+}
+
+.project-card.inactive {
+    border-left-color: #9e9e9e;
+}
+
+.project-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.project-card-header h3 {
+    margin: 0;
+    color: #333;
+    font-size: 18px;
+}
+
+.project-status {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.project-status.active {
+    background: #e8f5e9;
+    color: #4caf50;
+}
+
+.project-status.inactive {
+    background: #f5f5f5;
+    color: #9e9e9e;
+}
+
+.project-card-body {
+    margin-bottom: 15px;
+}
+
+.project-description {
+    color: #666;
+    margin: 0 0 10px 0;
+    line-height: 1.5;
+}
+
+.project-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    color: #999;
+}
+
+.project-card-footer {
+    display: flex;
+    gap: 10px;
+    padding-top: 15px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.project-card-footer button {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+
+.empty-state h3 {
+    margin: 0 0 10px 0;
+    color: #666;
+}
+
+.empty-state p {
+    margin: 0 0 20px 0;
+    color: #999;
+}
+
+/* 聊天头部项目选择器 */
+.chat-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.project-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.project-selector label {
+    font-weight: 500;
+    color: #333;
+}
+
+.project-selector select {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    font-size: 14px;
+    min-width: 200px;
+}
+
+.model-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.model-selector label {
+    font-weight: 500;
+    color: #333;
+}
+
+.model-selector select {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    font-size: 14px;
+    min-width: 200px;
 }
 
 .usage-stats p {

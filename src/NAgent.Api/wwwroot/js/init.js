@@ -1,6 +1,18 @@
 $(document).ready(function() {
     const API_BASE_URL = window.location.origin;
 
+    // ⭐ 页面加载时检查是否已初始化，如果已初始化则跳转
+    $.ajax({
+        url: `${API_BASE_URL}/api/initialization/status`,
+        type: 'GET',
+        success: function(response) {
+            if (response.success && response.data && response.data.isInitialized) {
+                // 已初始化，跳转到登录页
+                window.location.replace('/login.html');
+            }
+        }
+    });
+
     // 表单提交处理
     $('#initForm').on('submit', function(e) {
         e.preventDefault();

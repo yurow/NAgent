@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAgent</title>
+    <script>
+        // 页面加载后立即进行路由判断
+        (function() {
+            // 1. 检查系统是否已初始化
+            fetch('/api/initialization/status')
+                .then(function(response) { return response.json(); })
+                .then(function(result) {
+                    if (result.success && result.data && result.data.isInitialized) {
+                        // 2. 已初始化，检查是否已登录
+                        var token = localStorage.getItem('jwt_token');
+                        if (token) {
+                            // 3. 已登录，进入系统主页面
+                            window.location.replace('/dashboard.html');
+                        } else {
+                            // 未登录，跳转登录页
+                            window.location.replace('/login.html');
+                        }
+                    } else {
+                        // 未初始化，跳转初始化页面
+                        window.location.replace('/init.html');
+                    }
+                })
+                .catch(function() {
+                    // 请求失败，假设未初始化
+                    window.location.replace('/init.html');
+                });
+        })();
+    </script>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f2f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+        }
+        .loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #4a90d9;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <div class="spinner"></div>
+        <p>正在加载系统...</p>
+    </div>
+</body>
+</html>

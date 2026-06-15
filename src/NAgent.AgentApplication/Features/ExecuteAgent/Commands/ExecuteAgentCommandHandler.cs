@@ -14,44 +14,55 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
     private readonly IAgentSessionRepository _sessionRepository;
     private readonly IPromptFilter _promptFilter;
     private readonly ISandboxResultValidator _resultValidator;
+    private readonly IProjectRepository _projectRepository;
 
     public ExecuteAgentCommandHandler(
         IAgentEngine agentEngine,
         IAgentSessionRepository sessionRepository,
         IPromptFilter promptFilter,
-        ISandboxResultValidator resultValidator)
+        ISandboxResultValidator resultValidator,
+        IProjectRepository projectRepository)
     {
         _agentEngine = agentEngine ?? throw new ArgumentNullException(nameof(agentEngine));
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _promptFilter = promptFilter ?? throw new ArgumentNullException(nameof(promptFilter));
         _resultValidator = resultValidator ?? throw new ArgumentNullException(nameof(resultValidator));
+        _projectRepository = projectRepository ?? throw new ArgumentNullException(nameof(projectRepository));
     }
 
     public async Task<ExecuteAgentResult> Handle(ExecuteAgentCommand request, CancellationToken cancellationToken)
     {
         try
         {
-            // 1. 安全过滤
+            // 1. 验证项目是否存在
+            var projectId = Guid.Parse(request.ProjectId);
+            var project = await _projectRepository.GetByIdAsync(projectId, cancellationToken);
+            if (project == null)
+            {
+                return new ExecuteAgentResult(false, "项目不存在");
+            }
+
+            // 2. 安全过滤
             var filterResult = _promptFilter.Filter(request.UserInput);
             if (!filterResult.IsSafe)
             {
                 return new ExecuteAgentResult(false, $"安全拦截: {filterResult.Warning}");
             }
 
-            // 2. 加载或创建会话
-            var session = await GetOrCreateSessionAsync(request.SessionId, cancellationToken);
+            // 3. 加载或创建会话
+            var session = await GetOrCreateSessionAsync(request.SessionId, projectId, cancellationToken);
             
-            // 3. 添加用户消息
+            // 4. 添加用户消息
             session.AddUserMessage(filterResult.CleanedInput);
 
-            // 4. 执行 Agent（传入模型ID）
+            // 5. 执行 Agent（传入模型ID）
             var executionResult = await _agentEngine.ExecuteAsync(
                 session, 
                 filterResult.CleanedInput, 
                 request.ModelId,
                 cancellationToken);
 
-            // 5. 如果使用了工具，校验结果
+            // 6. 如果使用了工具，校验结果
             if (executionResult.ToolName != null && !executionResult.Success)
             {
                 var validation = _resultValidator.Validate(executionResult.Output);
@@ -61,10 +72,10 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
                 }
             }
 
-            // 6. 添加助手消息
+            // 7. 添加助手消息
             session.AddAssistantMessage(executionResult.Output);
 
-            // 7. 保存会话
+            // 8. 保存会话
             await _sessionRepository.UpdateAsync(session, cancellationToken);
 
             return new ExecuteAgentResult(
@@ -78,7 +89,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         }
     }
 
-    private async Task<AgentSession> GetOrCreateSessionAsync(string sessionKey, CancellationToken cancellationToken)
+    private async Task<AgentSession> GetOrCreateSessionAsync(string sessionKey, Guid projectId, CancellationToken cancellationToken)
     {
         var session = await _sessionRepository.GetBySessionKeyAsync(sessionKey, cancellationToken);
         

@@ -43,12 +43,12 @@ public interface ILlmClient
     /// <summary>
     /// 设置当前使用的模型
     /// </summary>
-    void SetCurrentModel(string modelId);
+    Task SetCurrentModelAsync(string modelId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 获取当前使用的模型
     /// </summary>
-    string GetCurrentModel();
+    Task<string> GetCurrentModelAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>

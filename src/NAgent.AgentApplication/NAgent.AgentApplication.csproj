@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NAgent.AgentDomain\NAgent.AgentDomain.csproj" />
+    <ProjectReference Include="..\NAgent.Infrastructure\NAgent.Infrastructure.csproj" />
     <ProjectReference Include="..\NAgent.Shared\NAgent.Shared.csproj" />
   </ItemGroup>
 

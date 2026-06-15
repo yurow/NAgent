@@ -33,7 +33,7 @@ public class SwitchModelCommandHandler : IRequestHandler<SwitchModelCommand, boo
         }
 
         // 切换当前使用的模型
-        _llmClient.SetCurrentModel(request.ModelId);
+        await _llmClient.SetCurrentModelAsync(request.ModelId, cancellationToken);
 
         return true;
     }

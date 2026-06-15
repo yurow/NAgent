@@ -1,172 +1,402 @@
-# NAgent 项目结构
+# Project Structure
+
+This document provides a comprehensive overview of the NAgent project organization, explaining the purpose of each directory and key files.
+
+## Root Directory
 
 ```
 NAgent/
-│
-├── .gitignore                          # Git忽略文件配置
-├── README.md                           # 项目说明文档
-├── NAgent.WebApi.slnx                  # 解决方案文件
-├── csharp-dotnet-ddd.md                # C# DDD开发规范
-│
-├── src/                                # 源代码目录
-│   │
-│   ├── NAgent.Domain/                  # 🎯 领域层（核心业务逻辑）
-│   │   ├── Common/
-│   │   │   └── EntityBase.cs          # 实体基类
-│   │   ├── Entities/
-│   │   │   └── User.cs                # 用户实体
-│   │   ├── Events/
-│   │   │   ├── IDomainEvent.cs        # 领域事件接口
-│   │   │   └── UserCreatedEvent.cs    # 用户创建事件
-│   │   ├── Exceptions/
-│   │   │   └── DomainException.cs     # 领域异常
-│   │   ├── Repositories/
-│   │   │   ├── IRepository.cs         # 通用仓储接口
-│   │   │   └── IUserRepository.cs     # 用户仓储接口
-│   │   ├── Services/                   # 领域服务（待实现）
-│   │   └── ValueObjects/               # 值对象（待实现）
-│   │
-│   ├── NAgent.Application/             # 📋 应用层（CQRS、DTO、服务协调）
-│   │   ├── Common/                     # 应用层通用类
-│   │   ├── DTOs/
-│   │   │   └── UserDto.cs             # 用户DTO
-│   │   ├── Features/                   # 功能模块（按业务领域分组）
-│   │   │   └── Users/
-│   │   │       ├── Commands/
-│   │   │       │   ├── CreateUserCommand.cs
-│   │   │       │   └── CreateUserCommandHandler.cs
-│   │   │       ├── Queries/
-│   │   │       │   ├── GetUserByIdQuery.cs
-│   │   │       │   └── GetUserByIdQueryHandler.cs
-│   │   │       └── EventHandlers/      # 领域事件处理器
-│   │   ├── Interfaces/                 # 应用服务接口
-│   │   ├── Mappings/
-│   │   │   └── MappingProfile.cs      # AutoMapper配置
-│   │   └── Validators/
-│   │       └── CreateUserCommandValidator.cs  # FluentValidation验证器
-│   │
-│   ├── NAgent.Infrastructure/          # 🔧 基础设施层（数据访问、外部服务）
-│   │   ├── Configurations/
-│   │   │   └── UserConfiguration.cs   # EF Core实体配置
-│   │   ├── Persistence/
-│   │   │   └── AppDbContext.cs        # 数据库上下文
-│   │   ├── Repositories/
-│   │   │   └── UserRepository.cs      # 用户仓储实现
-│   │   ├── Services/                   # 外部服务实现
-│   │   └── DependencyInjection.cs     # 依赖注入配置
-│   │
-│   ├── NAgent.Api/                     # 🌐 API层（Controllers、中间件）
-│   │   ├── Controllers/
-│   │   │   └── UsersController.cs     # 用户API控制器
-│   │   ├── Middlewares/
-│   │   │   └── GlobalExceptionHandler.cs  # 全局异常处理中间件
-│   │   ├── Program.cs                  # 应用入口和DI配置
-│   │   ├── appsettings.json            # 应用配置
-│   │   └── NAgent.Api.csproj           # API项目文件
-│   │
-│   └── NAgent.Shared/                  # 📦 共享层（通用类型）
-│       ├── Exceptions/
-│       │   ├── NotFoundException.cs   # 未找到异常
-│       │   └── ValidationException.cs # 验证异常
-│       └── Responses/
-│           └── ApiResponse.cs         # 统一API响应模型
-│
-└── tests/                              # 🧪 测试目录
-    │
-    ├── NAgent.UnitTests/               # 单元测试
-    │   ├── Domain/                     # 领域层测试
-    │   ├── Application/                # 应用层测试
-    │   └── NAgent.UnitTests.csproj
-    │
-    └── NAgent.IntegrationTests/        # 集成测试
-        ├── Api/                        # API集成测试
-        ├── Infrastructure/             # 基础设施测试
-        └── NAgent.IntegrationTests.csproj
+├── src/                          # Source code
+├── tests/                        # Test projects
+├── docs/                         # Documentation
+├── skills/                       # Skill markdown files
+├── tools/                        # Tool YAML configuration files
+├── nagent.db                     # SQLite database (generated at runtime)
+├── NAgent.WebApi.slnx            # Solution file
+├── README.md                     # Project overview
+├── QUICKSTART.md                 # Getting started guide
+├── PROJECT_STRUCTURE.md          # This file
+└── GENERATION_REPORT.md          # Development history
 ```
 
-## 📊 层级依赖关系
+## Source Code Organization (`src/`)
+
+The source code is organized into two parallel subsystems following Domain-Driven Design principles.
+
+### Core System
+
+#### 1. NAgent.Api
+
+**Purpose**: REST API layer, middleware, static file serving
 
 ```
-┌─────────────────────────────────────┐
-│         NAgent.Api (API层)          │
-│  ┌──────────────────────────────┐   │
-│  │ Controllers + Middlewares    │   │
-│  └──────────────────────────────┘   │
-└──────────┬──────────┬───────────────┘
-           ↓          ↓
-┌──────────────────┐ ┌──────────────────────┐
-│  Application层   │ │   Shared层           │
-│  ┌────────────┐  │ │  ┌────────────────┐  │
-│  │ CQRS + DTO │  │ │  │ Exceptions     │  │
-│  └────────────┘  │ │  │ Responses      │  │
-└────────┬─────────┘ │  └────────────────┘  │
-         ↓           └──────────┬───────────┘
-┌──────────────────┐            ↓
-│ Infrastructure层 │  ┌──────────────────────┐
-│  ┌────────────┐  │  │   Domain层           │
-│  │ EF Core    │  │  │  ┌────────────────┐  │
-│  │ Repos      │  │  │  │ Entities       │  │
-│  └────────────┘  │  │  │ Value Objects  │  │
-└──────────────────┘  │  │ Domain Events  │  │
-                      │  │ Repositories*  │  │
-                      │  └────────────────┘  │
-                      └──────────────────────┘
-                      * 接口定义，Infrastructure实现
+NAgent.Api/
+├── Controllers/                  # API Controllers
+│   ├── AuthController.cs         # Authentication endpoints
+│   ├── UsersController.cs        # User management
+│   ├── ProjectsController.cs     # Project management
+│   ├── LlmController.cs          # LLM provider/model management
+│   ├── AgentController.cs        # Agent execution
+│   ├── SkillsController.cs       # Skills management
+│   ├── MemoryController.cs       # Memory management
+│   └── InitializationController.cs # System initialization
+├── Middleware/
+│   ├── JwtAuthenticationMiddleware.cs  # JWT token validation
+│   └── GlobalExceptionHandler.cs       # Global exception handling
+├── wwwroot/                      # Static files
+│   ├── index.html               # Entry point
+│   ├── login.html               # Login page
+│   ├── init.html                # System initialization page
+│   ├── dashboard.html           # Main dashboard (SPA)
+│   ├── css/                     # Stylesheets
+│   │   ├── login.css
+│   │   ├── init.css
+│   │   └── dashboard.css
+│   └── js/                      # JavaScript files
+│       ├── login.js             # Login logic
+│       ├── init.js              # Initialization logic
+│       └── dashboard.js         # Main application logic
+├── appsettings.json             # Application configuration
+├── appsettings.Development.json # Development configuration
+└── Program.cs                   # Application entry point
 ```
 
-## 🔄 数据流示例：创建用户
+#### 2. NAgent.Application
+
+**Purpose**: Application layer containing CQRS commands/queries, DTOs, validators, and mapping profiles
 
 ```
-Client Request
-     ↓
-[API Layer] UsersController.CreateUser()
-     ↓
-[Application Layer] CreateUserCommand → MediatR
-     ↓
-[Application Layer] CreateUserCommandHandler
-     ├→ 验证用户名/邮箱唯一性 (IUserRepository)
-     ├→ 调用领域实体 User.Create() 
-     │    ├→ 业务规则验证
-     │    └→ 触发 UserCreatedEvent
-     └→ 持久化 (IUserRepository.AddAsync)
-     ↓
-[Infrastructure Layer] UserRepository.AddAsync()
-     ↓
-[Infrastructure Layer] AppDbContext.SaveChangesAsync()
-     ↓
-Database (PostgreSQL)
-     ↓
-Response: UserId
+NAgent.Application/
+├── DTOs/
+│   └── UserDto.cs               # User data transfer object
+├── Features/                    # Feature-organized CQRS
+│   ├── Auth/
+│   │   └── Queries/
+│   │       ├── LoginQuery.cs           # Login query
+│   │       └── LoginQueryHandler.cs    # Login handler
+│   ├── Users/
+│   │   ├── Commands/
+│   │   │   ├── CreateUserCommand.cs           # Create user
+│   │   │   ├── CreateUserCommandHandler.cs
+│   │   │   ├── UpdateUserStatusCommand.cs     # Update status
+│   │   │   ├── UpdateUserRoleCommand.cs       # Update role
+│   │   │   ├── ResetUserPasswordCommand.cs    # Reset password
+│   │   │   └── UserManagementCommandHandlers.cs
+│   │   └── Queries/
+│   │       ├── GetUserByIdQuery.cs
+│   │       ├── GetUserByIdQueryHandler.cs
+│   │       ├── GetAllUsersQuery.cs
+│   │       └── GetAllUsersQueryHandler.cs
+│   └── ... (other features)
+├── Mappings/
+│   └── MappingProfile.cs        # AutoMapper configuration
+├── Interfaces/
+│   ├── IJwtTokenService.cs      # JWT token generation
+│   ├── IPasswordHasher.cs       # Password hashing abstraction
+│   └── IDateTimeService.cs      # DateTime abstraction
+└── Validators/                  # FluentValidation validators
 ```
 
-## 📁 关键文件说明
+#### 3. NAgent.Domain
 
-### Domain层
-- **EntityBase.cs**: 所有实体的基类，包含Id、时间戳和领域事件
-- **User.cs**: 用户实体，封装业务规则和状态变更
-- **IDomainEvent.cs**: 领域事件标记接口
-- **IUserRepository.cs**: 用户仓储接口（由Infrastructure实现）
+**Purpose**: Domain layer containing core business entities, domain events, repository interfaces, and domain exceptions
 
-### Application层
-- **CreateUserCommand.cs**: 创建用户的命令
-- **CreateUserCommandHandler.cs**: 命令处理器，协调领域对象
-- **GetUserByIdQuery.cs**: 查询用户ById的查询
-- **UserDto.cs**: 数据传输对象
-- **MappingProfile.cs**: AutoMapper映射配置
-- **CreateUserCommandValidator.cs**: FluentValidation验证器
+```
+NAgent.Domain/
+├── Entities/
+│   └── User.cs                  # User entity
+├── Enums/
+├── Events/                      # Domain events
+├── Exceptions/
+│   └── DomainException.cs       # Base domain exception
+├── Repositories/
+│   ├── IRepository.cs           # Generic repository interface
+│   └── IUserRepository.cs       # User repository interface
+└── ValueObjects/                # Value objects
+```
 
-### Infrastructure层
-- **AppDbContext.cs**: EF Core数据库上下文
-- **UserConfiguration.cs**: User实体的EF Core配置
-- **UserRepository.cs**: IUserRepository的实现
-- **DependencyInjection.cs**: 服务注册扩展方法
+#### 4. NAgent.Infrastructure
 
-### API层
-- **UsersController.cs**: RESTful API端点
-- **GlobalExceptionHandler.cs**: 全局异常处理中间件
-- **Program.cs**: 应用启动和DI配置
+**Purpose**: Infrastructure layer containing data persistence, external service implementations
 
-### Shared层
-- **ApiResponse.cs**: 统一的API响应格式
-- **NotFoundException.cs**: 资源未找到异常
-- **ValidationException.cs**: 验证失败异常
+```
+NAgent.Infrastructure/
+├── Persistence/
+│   └── AppDbContext.cs          # SqlSugar database context
+├── Repositories/
+│   ├── SqliteRepository.cs      # Generic SQLite repository
+│   ├── SqliteUserRepository.cs  # User repository implementation
+│   └── ...
+├── Services/
+│   ├── JwtTokenService.cs       # JWT implementation
+│   ├── Sha256PasswordHasher.cs  # SHA256 password hasher
+│   └── InitializationService.cs # System initialization
+└── DependencyInjection.cs       # DI registration
+```
+
+#### 5. NAgent.Shared
+
+**Purpose**: Shared components used across all layers
+
+```
+NAgent.Shared/
+└── Responses/
+    └── ApiResponse.cs           # Standard API response wrapper
+```
+
+### Agent Subsystem
+
+#### 6. NAgent.AgentApplication
+
+**Purpose**: Application layer for the AI Agent subsystem
+
+```
+NAgent.AgentApplication/
+├── Features/
+│   ├── ExecuteAgent/
+│   │   └── Commands/
+│   │       ├── ExecuteAgentCommand.cs
+│   │       └── ExecuteAgentCommandHandler.cs
+│   ├── LlmManagement/
+│   │   ├── Commands/            # LLM provider/model commands
+│   │   └── Queries/             # LLM provider/model queries
+│   ├── Projects/
+│   │   ├── Commands/            # Project commands
+│   │   └── Queries/             # Project queries
+│   ├── Skills/
+│   │   ├── Commands/            # Skill commands
+│   │   └── Queries/             # Skill queries
+│   └── Memory/
+│       ├── Commands/            # Memory commands
+│       └── Queries/             # Memory queries
+└── Interfaces/
+    ├── IAgentEngine.cs          # Agent engine abstraction
+    ├── ILlmClient.cs            # LLM client interface
+    ├── ISandboxExecutor.cs      # Sandbox executor interface
+    └── ISecurity.cs             # Security component interfaces
+```
+
+#### 7. NAgent.AgentDomain
+
+**Purpose**: Domain layer for AI Agent entities and services
+
+```
+NAgent.AgentDomain/
+├── Entities/
+│   ├── AgentSession.cs          # Agent session entity
+│   ├── AgentTool.cs             # Agent tool entity
+│   ├── Project.cs               # Project entity
+│   ├── ProjectMemory.cs         # Project memory entity
+│   ├── Skill.cs                 # Skill entity
+│   └── ToolDefinition.cs        # Tool definition entity
+├── Enums/
+│   ├── LlmProtocolType.cs       # LLM protocol types
+│   ├── ToolSecurityLevel.cs     # Tool security levels
+│   ├── MemoryCategory.cs        # Memory categories
+│   └── MemoryImportance.cs      # Memory importance levels
+├── Repositories/
+│   ├── IAgentSessionRepository.cs
+│   ├── IAgentToolRepository.cs
+│   ├── IProjectRepository.cs
+│   ├── IProjectMemoryRepository.cs
+│   ├── ISkillRepository.cs
+│   └── IToolDefinitionRepository.cs
+└── Services/
+    └── Memory/
+        ├── IMemorySystem.cs           # Memory system interface
+        ├── IMemoryStorage.cs          # Memory storage interface
+        ├── DefaultMemorySystem.cs     # Default implementation
+        ├── FileMemoryStorage.cs       # File-based storage
+        └── MemorySystemFactory.cs     # Memory system factory
+```
+
+#### 8. NAgent.AgentInfrastructure
+
+**Purpose**: Infrastructure for AI Agent execution
+
+```
+NAgent.AgentInfrastructure/
+├── Agents/
+│   ├── AgentEngineFactory.cs          # Engine factory
+│   ├── LangChain/
+│   │   └── LangChainAgentEngine.cs    # LangChain implementation
+│   └── SemanticKernel/
+│       └── SemanticKernelAgentEngine.cs # SK implementation
+├── Llm/
+│   └── MultiModelLlmClient.cs         # Multi-model LLM client
+├── Parsers/
+│   ├── SkillMarkdownParser.cs         # Skill MD parser
+│   └── ToolYamlParser.cs              # Tool YAML parser
+├── Repositories/
+│   ├── InMemoryAgentSessionRepository.cs
+│   ├── InMemoryAgentToolRepository.cs
+│   ├── InMemoryProjectMemoryRepository.cs
+│   ├── InMemorySkillRepository.cs
+│   ├── InMemoryToolDefinitionRepository.cs
+│   ├── SqliteLlmModelRepository.cs
+│   └── SqliteLlmProviderRepository.cs
+├── Sandbox/
+│   └── CubeSandboxExecutorImpl.cs     # Sandbox executor
+├── Security/
+│   ├── PromptFilterImpl.cs            # Prompt injection filter
+│   └── SandboxResultValidatorImpl.cs  # Sandbox result validator
+└── DependencyInjection.cs             # DI registration
+```
+
+#### 9. NAgent.AgentCore
+
+**Purpose**: Core agent runtime components
+
+```
+NAgent.AgentCore/
+├── Agent/
+│   ├── AgentRunner.cs           # Main agent runner
+│   ├── ToolDispatcher.cs        # Tool dispatch logic
+│   └── MemoryManager.cs         # Memory management
+├── LLm/
+│   └── LocalLlmClient.cs        # Local LLM client
+├── Sandbox/
+│   └── CubeSandboxClient.cs     # Sandbox client
+├── Security/
+│   ├── PromptFilter.cs          # Prompt filter
+│   ├── SandboxResultCheck.cs    # Sandbox result checker
+│   └── ToolLevelConfig.cs       # Tool security config
+├── Tools/
+│   ├── LocalTools/              # Local tool implementations
+│   │   └── CalculatorTool.cs
+│   └── SandboxTools/            # Sandbox tool implementations
+│       └── CodeExecutorTool.cs
+└── DependencyInjection.cs       # DI registration
+```
+
+## Test Projects (`tests/`)
+
+```
+tests/
+└── NAgent.Api.Tests/
+    ├── Controllers/             # Controller tests
+    └── Integration/             # Integration tests
+```
+
+## Configuration Files
+
+### appsettings.json
+
+Main application configuration:
+- Database connection strings
+- JWT settings
+- Agent configuration
+- LLM provider presets
+- Logging configuration
+
+### launchSettings.json
+
+Development environment settings:
+- Application URLs
+- Environment variables
+- Launch profiles
+
+## Database Schema
+
+### SQLite Tables
+
+1. **Users** - User accounts
+2. **projects** - Projects
+3. **LlmProviders** - LLM providers
+4. **LlmModels** - LLM models
+5. **LlmModelDailyUsages** - Daily usage statistics
+
+### In-Memory Storage
+
+The following use in-memory repositories (can be migrated to persistent storage):
+- Agent Sessions
+- Agent Tools
+- Skills
+- Tool Definitions
+- Project Memories
+
+## Dependency Graph
+
+```
+                    ┌─────────────┐
+                    │  NAgent.Api │
+                    └──────┬──────┘
+           ┌─────────────┼─────────────┐
+           ▼             ▼             ▼
+    ┌────────────┐ ┌────────────┐ ┌────────────┐
+    │NAgent.App  │ │NAgent.Agent│ │NAgent.Agent│
+    │lication    │ │Application │ │Domain      │
+    └──────┬─────┘ └──────┬─────┘ └──────┬─────┘
+           │              │              │
+           ▼              ▼              ▼
+    ┌────────────┐ ┌────────────┐ ┌────────────┐
+    │NAgent.     │ │NAgent.Agent│ │NAgent.Agent│
+    │Domain      │ │Infrastructure│ │Core      │
+    └──────┬─────┘ └──────┬─────┘ └────────────┘
+           │              │
+           ▼              ▼
+    ┌────────────┐ ┌────────────┐
+    │NAgent.     │ │NAgent.     │
+    │Infrastructure│ │Shared     │
+    └────────────┘ └────────────┘
+```
+
+## Naming Conventions
+
+### Files
+- **Controllers**: `*Controller.cs`
+- **Commands**: `*Command.cs`, `*CommandHandler.cs`
+- **Queries**: `*Query.cs`, `*QueryHandler.cs`
+- **Entities**: PascalCase, singular (e.g., `User.cs`)
+- **Repositories**: `I*Repository.cs` (interface), `*Repository.cs` (implementation)
+- **Services**: `I*Service.cs` (interface), `*Service.cs` (implementation)
+
+### Classes/Interfaces
+- **Interfaces**: PascalCase with `I` prefix (e.g., `IUserRepository`)
+- **Entities**: PascalCase (e.g., `User`, `Project`)
+- **DTOs**: PascalCase with camelCase properties for JSON serialization
+- **Enums**: PascalCase (e.g., `ToolSecurityLevel`)
+
+### Methods
+- **Async methods**: Suffix with `Async` (e.g., `GetByIdAsync`)
+- **Command handlers**: `Handle(*Command, CancellationToken)`
+- **Query handlers**: `Handle(*Query, CancellationToken)`
+
+## Adding New Features
+
+To add a new feature:
+
+1. **Domain Layer**: Define entities and repository interfaces in `NAgent.AgentDomain`
+2. **Application Layer**: Create commands/queries and handlers in `NAgent.AgentApplication`
+3. **Infrastructure Layer**: Implement repositories in `NAgent.AgentInfrastructure`
+4. **API Layer**: Add controller endpoints in `NAgent.Api`
+5. **Frontend**: Update `dashboard.html` and `dashboard.js`
+
+## Build Configuration
+
+### Solution File
+
+`NAgent.WebApi.slnx` defines the solution structure and project references.
+
+### Project Files
+
+Each `.csproj` file defines:
+- Target framework (`net8.0`)
+- Package references
+- Project references
+- Output settings
+
+### Key NuGet Packages
+
+| Package | Purpose |
+|---------|---------|
+| `Microsoft.AspNetCore.Authentication.JwtBearer` | JWT authentication |
+| `SqlSugarCore` | ORM for SQLite |
+| `MediatR` | CQRS implementation |
+| `AutoMapper` | Object mapping |
+| `FluentValidation` | Input validation |
+| `Serilog` | Structured logging |
+| `Swashbuckle.AspNetCore` | Swagger/OpenAPI |
+| `YamlDotNet` | YAML parsing |
+| `Markdig` | Markdown parsing |
+| `LangChain.Core` | LLM integration |

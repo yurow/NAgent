@@ -183,49 +183,6 @@ public class LlmController : ControllerBase
             : NotFound(ApiResponse.FailureResponse("提供商不存在"));
     }
 
-    /// <summary>
-    /// 修复协议类型为0的提供商（临时修复）
-    /// </summary>
-    [HttpPost("providers/fix-protocol")]
-    public async Task<IActionResult> FixInvalidProtocolTypes(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var query = new GetAllLlmProvidersQuery();
-            var providers = await _mediator.Send(query, cancellationToken);
-            
-            int fixedCount = 0;
-            foreach (var provider in providers)
-            {
-                if (provider.ProtocolType == 0)
-                {
-                    var command = new UpdateLlmProviderCommand(
-                        provider.Id,
-                        provider.Name,
-                        provider.BaseUrl,
-                        null, // 不修改 API Key
-                        provider.IsEnabled,
-                        NAgent.AgentDomain.Enums.LlmProtocolType.OpenAI // 修复为 OpenAI 协议
-                    );
-                    
-                    await _mediator.Send(command, cancellationToken);
-                    fixedCount++;
-                }
-            }
-            
-            return Ok(ApiResponse<object>.SuccessResponse(new
-            {
-                FixedCount = fixedCount,
-                Message = fixedCount > 0 
-                    ? $"已修复 {fixedCount} 个协议类型为0的提供商，已设置为OpenAI协议" 
-                    : "没有发现协议类型为0的提供商"
-            }));
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, ApiResponse.FailureResponse($"修复失败: {ex.Message}"));
-        }
-    }
 }
 
 /// <summary>

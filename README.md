@@ -1,261 +1,331 @@
-# NAgent - .NET DDD 架构示例项目
+# NAgent - AI Agent Platform
 
-这是一个基于领域驱动设计（DDD）架构的 .NET 8.0 示例项目，展示了如何构建可扩展、可维护的企业级应用程序。
+[![.NET](https://img.shields.io/badge/.NET-8.0-blue)](https://dotnet.microsoft.com/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## 📁 项目结构
+NAgent is a comprehensive AI Agent platform built on .NET 8 with Domain-Driven Design (DDD) architecture. It provides a complete solution for building, managing, and deploying AI agents with multi-LLM support, project isolation, extensible Skills/Tools system, and project-level memory management.
+
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [Quick Start](#quick-start)
+- [Documentation](#documentation)
+- [Project Structure](#project-structure)
+- [API Reference](#api-reference)
+- [Configuration](#configuration)
+- [Security](#security)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Features
+
+### Core Features
+
+- **User Authentication & Authorization**
+  - JWT-based authentication with role-based access control (Admin/User)
+  - Secure password hashing with configurable algorithms
+  - Token validation and automatic expiration handling
+
+- **Project Management**
+  - Create, manage, and organize projects with workspace isolation
+  - Each project has its own workspace directory and isolated memory
+  - Project-level access control and management
+
+- **Multi-LLM Provider Management**
+  - Support for multiple LLM providers (OpenAI, Anthropic, Ollama, and more)
+  - Dynamic provider configuration via API or configuration files
+  - Model switching and usage statistics tracking
+  - Protocol abstraction supporting OpenAI-compatible and Anthropic APIs
+
+- **AI Agent Execution**
+  - Non-streaming and Server-Sent Events (SSE) streaming execution
+  - LangChain-based agent engine with extensible architecture
+  - Semantic Kernel engine support (planned)
+  - Session management with conversation history
+
+- **Skills System**
+  - Extensible Skills defined via Markdown documents with YAML Front Matter
+  - Automatic loading from `skills/` directory
+  - Skill categorization and version management
+  - Association with Tools for capability composition
+
+- **Tools System**
+  - Tool definitions via YAML configuration files
+  - Security level classification (Low/Medium/High)
+  - Multiple execution types: local, sandbox, HTTP, command
+  - Parameter validation with type checking and enum support
+
+- **Project-Level Memory System**
+  - Short-term memory: Recent conversation context (last 20 messages)
+  - Long-term memory: Persistent knowledge across sessions
+  - Memory importance scoring and automatic expiration
+  - Memory categories: UserPreference, ProjectKnowledge, CodePattern, ErrorSolution, Decision
+  - Full project memory isolation - each project's memories are completely separate
+
+- **User Management (Admin)**
+  - User CRUD operations with role assignment
+  - Account activation/deactivation
+  - Password reset functionality
+  - Admin-only access to system management features
+
+### Frontend Features
+
+- Single-page application experience with jQuery
+- Real-time streaming chat interface
+- Project management dashboard
+- LLM provider and model configuration UI
+- User management interface (admin)
+- Skills and Tools management panels
+
+## Architecture
+
+NAgent adopts a **Domain-Driven Design (DDD) layered architecture** with two parallel subsystems:
+
+### Core System (Base DDD)
 
 ```
-NAgent/
-├── src/
-│   ├── NAgent.Domain/              # 领域层（核心业务逻辑）
-│   │   ├── Entities/               # 实体
-│   │   ├── ValueObjects/           # 值对象
-│   │   ├── Repositories/           # 仓储接口
-│   │   ├── Services/               # 领域服务
-│   │   ├── Events/                 # 领域事件
-│   │   ├── Exceptions/             # 领域异常
-│   │   └── Common/                 # 通用基类
-│   │
-│   ├── NAgent.Application/         # 应用层（CQRS、DTO、服务协调）
-│   │   ├── Features/               # 功能模块（按业务领域分组）
-│   │   │   └── Users/
-│   │   │       ├── Commands/       # 命令
-│   │   │       ├── Queries/        # 查询
-│   │   │       └── EventHandlers/  # 事件处理器
-│   │   ├── DTOs/                   # 数据传输对象
-│   │   ├── Mappings/               # AutoMapper配置
-│   │   ├── Validators/             # FluentValidation验证器
-│   │   └── Interfaces/             # 应用服务接口
-│   │
-│   ├── NAgent.Infrastructure/      # 基础设施层（数据访问、外部服务）
-│   │   ├── Persistence/            # 数据库上下文
-│   │   ├── Repositories/           # 仓储实现
-│   │   ├── Configurations/         # EF Core配置
-│   │   └── Services/               # 外部服务实现
-│   │
-│   ├── NAgent.Api/                 # API层（Controllers、中间件）
-│   │   ├── Controllers/            # API控制器
-│   │   ├── Middlewares/            # 中间件
-│   │   └── Program.cs              # 应用入口
-│   │
-│   └── NAgent.Shared/              # 共享层（通用类型）
-│       ├── Exceptions/             # 通用异常
-│       └── Responses/              # 统一响应模型
-│
-└── tests/
-    ├── NAgent.UnitTests/           # 单元测试
-    └── NAgent.IntegrationTests/    # 集成测试
+┌─────────────────────────────────────────┐
+│              NAgent.Api                  │  ← REST API, Middleware, Static Files
+├─────────────────────────────────────────┤
+│         NAgent.Application               │  ← CQRS Commands/Queries, DTOs, Validators
+├─────────────────────────────────────────┤
+│           NAgent.Domain                  │  ← Entities, Domain Events, Repository Interfaces
+├─────────────────────────────────────────┤
+│        NAgent.Infrastructure             │  ← SqlSugar + SQLite, Repository Implementations
+├─────────────────────────────────────────┤
+│           NAgent.Shared                  │  ← Common Response Models, Exceptions
+└─────────────────────────────────────────┘
 ```
 
-## 🏗️ 架构说明
+### Agent Subsystem (AI Extension)
 
-### DDD 分层架构
+```
+┌─────────────────────────────────────────┐
+│              NAgent.Api                  │  ← Shared API Layer
+├─────────────────────────────────────────┤
+│      NAgent.AgentApplication             │  ← Agent CQRS, LLM Management
+├─────────────────────────────────────────┤
+│        NAgent.AgentDomain                │  ← Agent Entities, Memory, Skills/Tools
+├─────────────────────────────────────────┤
+│     NAgent.AgentInfrastructure           │  ← LangChain/SK Engines, Multi-Model LLM
+├─────────────────────────────────────────┤
+│         NAgent.AgentCore                 │  ← Agent Runner, Tool Dispatcher, Security
+└─────────────────────────────────────────┘
+```
 
-1. **Domain Layer（领域层）**
-   - 包含核心业务逻辑和领域模型
-   - 不依赖任何外部库（除了MediatR用于领域事件）
-   - 定义仓储接口，由Infrastructure层实现
+### Dependency Flow
 
-2. **Application Layer（应用层）**
-   - 使用CQRS模式（Command Query Responsibility Segregation）
-   - 通过MediatR处理命令和查询
-   - 协调领域对象完成用例
-   - 不包含业务逻辑，只做流程编排
+```
+Api → Application/AgentApplication → Domain/AgentDomain → Infrastructure/AgentInfrastructure
+Shared is referenced by all layers
+```
 
-3. **Infrastructure Layer（基础设施层）**
-   - 实现Domain层定义的接口
-   - 数据持久化（EF Core + PostgreSQL）
-   - 外部服务集成
+### Key Architectural Patterns
 
-4. **API Layer（API层）**
-   - RESTful API端点
-   - 请求验证和响应格式化
-   - 全局异常处理
+- **CQRS (Command Query Responsibility Segregation)**: Separates read and write operations using MediatR
+- **Repository Pattern**: Abstracts data access with interfaces in Domain layer and implementations in Infrastructure
+- **Dependency Injection**: Full DI container support with scoped, transient, and singleton lifetimes
+- **Middleware Pipeline**: Custom JWT authentication middleware and global exception handling
+- **Options Pattern**: Strongly-typed configuration binding
 
-5. **Shared Layer（共享层）**
-   - 跨层使用的通用类型
-   - 异常类、响应模型等
+## Technology Stack
 
-## 🚀 技术栈
+| Category | Technology | Version |
+|----------|-----------|---------|
+| Runtime | .NET | 8.0 |
+| Web Framework | ASP.NET Core | 8.0 |
+| ORM | SqlSugar | 5.x |
+| Database | SQLite | 3.x |
+| CQRS | MediatR | 14.x |
+| Object Mapping | AutoMapper | 16.x |
+| Validation | FluentValidation | 12.x |
+| Authentication | JWT (System.IdentityModel.Tokens.Jwt) | 7.x |
+| Logging | Serilog | 4.x |
+| API Documentation | Swashbuckle (Swagger) | 6.x |
+| LLM Integration | LangChain.Core | 0.x |
+| YAML Parsing | YamlDotNet | 16.x |
+| Markdown Parsing | Markdig | 0.40.x |
+| Frontend | jQuery | 3.7.1 |
+| Testing | xUnit | 2.x |
 
-- **.NET 8.0** - 运行时框架
-- **ASP.NET Core** - Web框架
-- **Entity Framework Core 8.0** - ORM
-- **PostgreSQL** - 数据库
-- **MediatR 14.1.0** - CQRS实现
-- **AutoMapper 16.1.1** - 对象映射
-- **FluentValidation 12.1.1** - 验证框架
-- **Serilog 4.3.1** - 结构化日志
-- **Swagger/OpenAPI** - API文档
+## Quick Start
 
-### 测试
-- **xUnit** - 测试框架
-- **Moq 4.20.72** - Mock框架
-- **FluentAssertions 8.10.0** - 断言库
-- **Testcontainers** - 容器化集成测试
+### Prerequisites
 
-## 📦 快速开始
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [SQLite](https://www.sqlite.org/download.html) (optional, embedded)
 
-### 前置要求
+### Installation
 
-- .NET 8.0 SDK
-- PostgreSQL 12+
-- Docker（可选，用于集成测试）
-
-### 安装步骤
-
-1. **克隆仓库**
-   ```bash
-   git clone <repository-url>
-   cd NAgent
-   ```
-
-2. **还原依赖**
-   ```bash
-   dotnet restore
-   ```
-
-3. **配置数据库**
-   
-   修改 `src/NAgent.Api/appsettings.json` 中的连接字符串：
-   ```json
-   {
-     "ConnectionStrings": {
-       "DefaultConnection": "Host=localhost;Port=5432;Database=nagent_db;Username=postgres;Password=postgres"
-     }
-   }
-   ```
-
-4. **创建数据库**
-   ```bash
-   # 使用psql或其他工具创建数据库
-   createdb nagent_db
-   ```
-
-5. **运行迁移**
-   ```bash
-   cd src/NAgent.Api
-   dotnet ef migrations add InitialCreate -o ../NAgent.Infrastructure/Migrations
-   dotnet ef database update
-   ```
-
-6. **运行应用**
-   ```bash
-   dotnet run
-   ```
-
-7. **访问API文档**
-   
-   打开浏览器访问: `https://localhost:5001/swagger`
-
-## 🔧 开发指南
-
-### 添加新功能
-
-以添加"订单"功能为例：
-
-1. **在Domain层创建实体**
-   ```csharp
-   // src/NAgent.Domain/Entities/Order.cs
-   public class Order : EntityBase
-   {
-       // 实体定义
-   }
-   ```
-
-2. **定义仓储接口**
-   ```csharp
-   // src/NAgent.Domain/Repositories/IOrderRepository.cs
-   public interface IOrderRepository : IRepository<Order>
-   {
-       // 自定义查询方法
-   }
-   ```
-
-3. **在Application层创建命令/查询**
-   ```csharp
-   // src/NAgent.Application/Features/Orders/Commands/CreateOrderCommand.cs
-   public record CreateOrderCommand(...) : IRequest<Guid>;
-   
-   // src/NAgent.Application/Features/Orders/Commands/CreateOrderCommandHandler.cs
-   public class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, Guid>
-   {
-       // 实现
-   }
-   ```
-
-4. **在Infrastructure层实现仓储**
-   ```csharp
-   // src/NAgent.Infrastructure/Repositories/OrderRepository.cs
-   public class OrderRepository : IOrderRepository
-   {
-       // 实现
-   }
-   ```
-
-5. **注册依赖**
-   ```csharp
-   // src/NAgent.Infrastructure/DependencyInjection.cs
-   services.AddScoped<IOrderRepository, OrderRepository>();
-   ```
-
-6. **创建API控制器**
-   ```csharp
-   // src/NAgent.Api/Controllers/OrdersController.cs
-   [ApiController]
-   [Route("api/[controller]")]
-   public class OrdersController : ControllerBase
-   {
-       // API端点
-   }
-   ```
-
-### 代码规范
-
-- ✅ 遵循 SOLID 原则
-- ✅ 使用依赖注入
-- ✅ 领域实体使用工厂方法创建
-- ✅ 使用值对象封装复杂类型
-- ✅ 通过领域事件解耦业务逻辑
-- ✅ 命令和查询分离（CQRS）
-- ✅ 使用DTO进行层间数据传输
-- ✅ 全局异常处理
-
-## 🧪 测试
-
-### 运行单元测试
 ```bash
-cd tests/NAgent.UnitTests
-dotnet test
+# Clone the repository
+git clone https://github.com/your-org/nagent.git
+cd nagent
+
+# Restore dependencies
+dotnet restore
+
+# Build the solution
+dotnet build
+
+# Run the application
+dotnet run --project src/NAgent.Api
 ```
 
-### 运行集成测试
-```bash
-cd tests/NAgent.IntegrationTests
-dotnet test
+### Initial Setup
+
+1. Open `http://localhost:9527` in your browser
+2. The system will redirect to the initialization page on first run
+3. Create the first admin account
+4. Log in and start using NAgent
+
+### Default Configuration
+
+The application uses `appsettings.json` for configuration. Key settings:
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=nagent.db"
+  },
+  "JwtSettings": {
+    "SecretKey": "YourSuperSecretKey...",
+    "Issuer": "NAgent",
+    "Audience": "NAgent.Api",
+    "ExpirationMinutes": 60
+  }
+}
 ```
 
-## 📝 API 示例
+## Documentation
 
-### 创建用户
-```bash
-curl -X POST https://localhost:5001/api/users \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "john_doe",
-    "email": "john@example.com"
-  }'
+- [Quick Start Guide](QUICKSTART.md) - Step-by-step tutorial for new users
+- [Project Structure](PROJECT_STRUCTURE.md) - Detailed project organization
+- [Generation Report](GENERATION_REPORT.md) - Development history and design decisions
+- [中文文档](README_CN.md) - Chinese documentation
+
+## API Reference
+
+### Authentication
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/auth/login` | Public | User login |
+| GET | `/api/auth/validate` | Bearer | Validate token |
+
+### Projects
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/projects/user/{userId}` | Bearer | List user projects |
+| POST | `/api/projects` | Bearer | Create project |
+| DELETE | `/api/projects/{id}` | Bearer | Delete project |
+
+### LLM Management
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/llm/providers` | Bearer | List providers |
+| POST | `/api/llm/providers` | Bearer | Add provider |
+| GET | `/api/llm/models` | Bearer | List models |
+| POST | `/api/llm/models/switch` | Bearer | Switch model |
+
+### Agent Execution
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/agent/execute` | Bearer | Execute agent |
+| POST | `/api/agent/execute-stream` | Bearer | Stream execution |
+
+### Skills & Tools
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/skills` | Bearer | List skills |
+| POST | `/api/skills/reload` | Admin | Reload skills |
+
+### Memory
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/memory/project/{id}/summary` | Bearer | Memory summary |
+| POST | `/api/memory/project/{id}/long-term` | Bearer | Save memory |
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ASPNETCORE_ENVIRONMENT` | Environment name | `Production` |
+| `JWT_SECRET` | JWT signing key | From appsettings |
+| `DATABASE_PATH` | SQLite database path | `nagent.db` |
+
+### Skills Directory
+
+Place Markdown files in the `skills/` directory:
+
+```markdown
+---
+name: my-skill
+description: Skill description
+category: development
+version: 1.0.0
+---
+
+# My Skill
+
+## Tools
+- tool_name
+
+## Examples
+#### Example 1
+Input: ...
+Output: ...
 ```
 
-### 获取用户
-```bash
-curl -X GET https://localhost:5001/api/users/{userId}
+### Tools Directory
+
+Place YAML files in the `tools/` directory:
+
+```yaml
+name: my_tool
+description: Tool description
+category: development
+security_level: low
+
+parameters:
+  - name: param1
+    type: string
+    required: true
+
+execution:
+  type: local
+  command: "my-command"
 ```
 
-## 🤝 贡献
+## Security
 
-欢迎提交 Issue 和 Pull Request！
+- **JWT Authentication**: Stateless token-based auth with configurable expiration
+- **Role-Based Authorization**: `[Authorize(Roles = "Admin")]` for admin endpoints
+- **Password Hashing**: SHA256 with migration path to BCrypt/PBKDF2
+- **Input Validation**: FluentValidation for all input DTOs
+- **XSS Prevention**: HTML escaping in frontend
+- **Prompt Injection Filter**: Detects and blocks malicious prompt patterns
+- **Sandbox Execution**: High-risk tools execute in isolated environments
 
-## 📄 许可证
+## Contributing
 
-MIT License
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Built with .NET 8 and the amazing .NET ecosystem
+- LLM integration powered by LangChain
+- Frontend powered by jQuery and modern CSS

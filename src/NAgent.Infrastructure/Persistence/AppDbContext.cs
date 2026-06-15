@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SqlSugar;
 
 namespace NAgent.Infrastructure.Persistence;
@@ -7,17 +8,21 @@ namespace NAgent.Infrastructure.Persistence;
 /// </summary>
 public class AppDbContext : SqlSugarScope
 {
-    public AppDbContext(ConnectionConfig config) : base(config)
+    private readonly ILogger<AppDbContext>? _logger;
+
+    public AppDbContext(ConnectionConfig config, ILogger<AppDbContext>? logger = null) : base(config)
     {
+        _logger = logger;
+
         // 配置全局设置
         this.Aop.OnLogExecuting = (sql, pars) =>
         {
-            Console.WriteLine($"[SqlSugar] SQL: {sql}");
+            _logger?.LogDebug("[SqlSugar] SQL: {Sql}", sql);
         };
 
         this.Aop.OnError = (exp) =>
         {
-            Console.WriteLine($"[SqlSugar] Error: {exp.Message}");
+            _logger?.LogError(exp, "[SqlSugar] 执行 SQL 时发生错误");
         };
     }
 
@@ -33,5 +38,6 @@ public class AppDbContext : SqlSugarScope
     {
         // 创建表（如果不存在）
         CodeFirst.InitTables(typeof(NAgent.Domain.Entities.User));
+        CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.Project));
     }
 }

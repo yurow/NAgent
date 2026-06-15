@@ -18,6 +18,6 @@ public class GetCurrentModelQueryHandler : IRequestHandler<GetCurrentModelQuery,
 
     public Task<string> Handle(GetCurrentModelQuery request, CancellationToken cancellationToken)
     {
-        return Task.FromResult(_llmClient.GetCurrentModel());
+        return _llmClient.GetCurrentModelAsync(cancellationToken);
     }
 }

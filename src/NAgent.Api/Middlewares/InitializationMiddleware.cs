@@ -32,8 +32,8 @@ public class InitializationMiddleware
 
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
         
-        // 如果是排除的路径或静态文件，直接通过
-        if (excludedPaths.Any(excluded => path.StartsWith(excluded) || path.EndsWith(excluded)))
+        // 如果是排除的路径、静态文件或根路径，直接通过
+        if (string.IsNullOrEmpty(path) || path == "/" || excludedPaths.Any(excluded => path.StartsWith(excluded) || path.EndsWith(excluded)))
         {
             await _next(context);
             return;

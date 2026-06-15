@@ -19,6 +19,10 @@
                     <span>仪表盘</span>
                 </a>
                 <a href="#" class="nav-item">
+                    <span class="icon">📁</span>
+                    <span>项目管理</span>
+                </a>
+                <a href="#" class="nav-item">
                     <span class="icon">🤖</span>
                     <span>AI Agent</span>
                 </a>
@@ -29,6 +33,14 @@
                 <a href="#" class="nav-item">
                     <span class="icon">👥</span>
                     <span>用户管理</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <span class="icon">🔧</span>
+                    <span>Tools 管理</span>
+                </a>
+                <a href="#" class="nav-item">
+                    <span class="icon">📖</span>
+                    <span>Skills 管理</span>
                 </a>
             </nav>
             <div class="sidebar-footer">
@@ -88,12 +100,33 @@
                 </div>
             </div>
 
+            <!-- 项目管理区域（默认隐藏） -->
+            <div class="content project-content" id="projectManagementContent" style="display: none;">
+                <div class="project-panel">
+                    <div class="project-header">
+                        <h2>📁 项目管理</h2>
+                        <button id="createProjectBtn" class="btn-primary">➕ 创建新项目</button>
+                    </div>
+
+                    <!-- 项目列表 -->
+                    <div class="project-list-container" id="projectListContainer">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- AI Agent 聊天区域（默认隐藏） -->
             <div class="content chat-content" id="agentChatContent" style="display: none;">
                 <div class="chat-container">
                     <!-- 聊天头部 -->
                     <div class="chat-header">
                         <h2>🤖 AI Agent 对话</h2>
+                        <div class="project-selector">
+                            <label for="projectSelect">当前项目：</label>
+                            <select id="projectSelect">
+                                <option value="">请选择项目</option>
+                            </select>
+                        </div>
                         <div class="model-selector">
                             <label for="modelSelect">选择模型：</label>
                             <select id="modelSelect">
@@ -120,10 +153,16 @@
                             id="chatInput" 
                             placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)"
                             rows="3"></textarea>
-                        <button id="sendBtn" class="btn-send">
-                            <span>发送</span>
-                            <span class="icon">➤</span>
-                        </button>
+                        <div class="chat-input-controls">
+                            <label class="stream-toggle">
+                                <input type="checkbox" id="streamToggle" checked />
+                                <span>流式输出</span>
+                            </label>
+                            <button id="sendBtn" class="btn-send">
+                                <span>发送</span>
+                                <span class="icon">➤</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- 加载指示器 -->
@@ -161,6 +200,65 @@
                     <!-- 提供商列表 -->
                     <div class="provider-list-container" id="providerListContainer">
                         <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tools 管理区域（默认隐藏） -->
+            <div class="content admin-content" id="toolsManagementContent" style="display: none;">
+                <div class="admin-panel">
+                    <h2>🔧 Tools 管理</h2>
+                    <p class="section-desc">通过 YAML 配置文件定义的工具，Agent 可以调用这些工具完成任务。</p>
+                    
+                    <div class="toolbar">
+                        <button class="btn-primary" onclick="loadToolsList()">🔄 刷新列表</button>
+                    </div>
+
+                    <div class="provider-list-container" id="toolsListContainer">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Skills 管理区域（默认隐藏） -->
+            <div class="content admin-content" id="skillsManagementContent" style="display: none;">
+                <div class="admin-panel">
+                    <h2>📖 Skills 管理</h2>
+                    <p class="section-desc">通过 Markdown 文档描述的技能，为 Agent 提供专业领域知识和能力。</p>
+                    
+                    <div class="toolbar">
+                        <button class="btn-primary" onclick="loadSkillsList()">🔄 刷新列表</button>
+                        <button class="btn-secondary" onclick="reloadAllSkills()">📦 重新加载所有 Skills</button>
+                    </div>
+
+                    <div class="provider-list-container" id="skillsListContainer">
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 添加/编辑项目模态框 -->
+            <div id="projectModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3 id="projectModalTitle">创建新项目</h3>
+                        <span class="close-btn" onclick="closeProjectModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="projectForm">
+                            <div class="form-group">
+                                <label for="projectName">项目名称 *</label>
+                                <input type="text" id="projectName" required placeholder="例如：我的AI助手项目" />
+                            </div>
+                            <div class="form-group">
+                                <label for="projectDescription">项目描述</label>
+                                <textarea id="projectDescription" rows="3" placeholder="描述项目的用途和目标..."></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary">创建项目</button>
+                                <button type="button" class="btn-secondary" onclick="closeProjectModal()">取消</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>

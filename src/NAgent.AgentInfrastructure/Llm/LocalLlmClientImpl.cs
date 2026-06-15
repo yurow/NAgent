@@ -51,13 +51,14 @@ public class LocalLlmClientImpl : ILlmClient
         });
     }
 
-    public void SetCurrentModel(string modelId)
+    public Task SetCurrentModelAsync(string modelId, CancellationToken cancellationToken = default)
     {
         _currentModelId = modelId;
+        return Task.CompletedTask;
     }
 
-    public string GetCurrentModel()
+    public Task<string> GetCurrentModelAsync(CancellationToken cancellationToken = default)
     {
-        return _currentModelId;
+        return Task.FromResult(_currentModelId);
     }
 }

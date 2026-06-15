@@ -1,10 +1,9 @@
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using NAgent.Application.Features.Auth.Queries;
 using NAgent.Application.Interfaces;
-using NAgent.Domain.Repositories;
 using NAgent.Shared.Responses;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace NAgent.Api.Controllers;
 
@@ -16,14 +15,14 @@ namespace NAgent.Api.Controllers;
 [Tags("Authentication")]
 public class AuthController : ControllerBase
 {
-    private readonly IUserRepository _userRepository;
+    private readonly IMediator _mediator;
     private readonly IJwtTokenService _jwtTokenService;
 
     public AuthController(
-        IUserRepository userRepository,
+        IMediator mediator,
         IJwtTokenService jwtTokenService)
     {
-        _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+        _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _jwtTokenService = jwtTokenService ?? throw new ArgumentNullException(nameof(jwtTokenService));
     }
 
@@ -34,56 +33,20 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
-        try
+        var query = new LoginQuery(request.Username, request.Password);
+        var result = await _mediator.Send(query, cancellationToken);
+
+        if (!result.Success)
         {
-            // 验证输入
-            if (string.IsNullOrWhiteSpace(request.Username))
-                return BadRequest(ApiResponse.FailureResponse("用户名不能为空"));
-
-            if (string.IsNullOrWhiteSpace(request.Password))
-                return BadRequest(ApiResponse.FailureResponse("密码不能为空"));
-
-            // 查找用户
-            var user = await _userRepository.GetByUsernameAsync(request.Username, cancellationToken);
-            
-            if (user == null)
-            {
-                return Unauthorized(ApiResponse.FailureResponse("用户名或密码错误"));
-            }
-
-            // 验证密码
-            var passwordHash = HashPassword(request.Password);
-            if (user.PasswordHash != passwordHash)
-            {
-                return Unauthorized(ApiResponse.FailureResponse("用户名或密码错误"));
-            }
-
-            // 检查账号是否激活
-            if (!user.IsActive)
-            {
-                return Unauthorized(ApiResponse.FailureResponse("账号已被禁用"));
-            }
-
-            // 生成 JWT Token
-            var token = _jwtTokenService.GenerateToken(user.Id, user.Username, user.IsAdmin);
-
-            return Ok(ApiResponse<object>.SuccessResponse(new
-            {
-                Token = token,
-                User = new
-                {
-                    user.Id,
-                    user.Username,
-                    user.Email,
-                    user.IsAdmin
-                },
-                ExpiresIn = 3600 // 1小时
-            }));
+            return Unauthorized(ApiResponse.FailureResponse(result.ErrorMessage ?? "登录失败"));
         }
-        catch (Exception ex)
+
+        return Ok(ApiResponse<object>.SuccessResponse(new
         {
-            return StatusCode(500, ApiResponse.FailureResponse($"登录失败: {ex.Message}"));
-        }
+            Token = result.Token,
+            User = result.User,
+            ExpiresIn = 3600 // 1小时
+        }));
     }
 
     /// <summary>
@@ -113,16 +76,6 @@ public class AuthController : ControllerBase
         }
 
         return Unauthorized(ApiResponse.FailureResponse("Token 无效或已过期"));
-    }
-
-    /// <summary>
-    /// 哈希密码（与初始化服务保持一致）
-    /// </summary>
-    private static string HashPassword(string password)
-    {
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-        return Convert.ToBase64String(hashedBytes);
     }
 }
 

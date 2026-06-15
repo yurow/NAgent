@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NAgent.Application.Interfaces;
 using NAgent.Domain.Repositories;
+using NAgent.AgentDomain.Repositories;
 using NAgent.Infrastructure.Persistence;
 using NAgent.Infrastructure.Repositories;
 using NAgent.Infrastructure.Services;
@@ -32,7 +34,8 @@ public static class DependencyInjection
                 }
             };
 
-            var context = new AppDbContext(config);
+            var logger = sp.GetService<ILogger<AppDbContext>>();
+            var context = new AppDbContext(config, logger);
             
             // 初始化数据库表结构
             context.InitializeDatabase();
@@ -46,12 +49,23 @@ public static class DependencyInjection
 
         // 注册仓储
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IProjectRepository, SqliteProjectRepository>();
 
         // 注册初始化服务（Scoped，因为依赖了 Scoped 的 UserRepository）
         services.AddScoped<IInitializationService, InitializationService>();
 
         // 注册 JWT Token 服务（Singleton）
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
+
+        // 注册工作空间管理器（Singleton）
+        services.AddSingleton<IWorkspaceManager>(sp =>
+        {
+            var workspacePath = configuration["Workspace:BasePath"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "NAgent", "workspace");
+            return new WorkspaceManager(workspacePath);
+        });
+
+        // 注册密码哈希服务（Singleton）
+        services.AddSingleton<IPasswordHasher, Sha256PasswordHasher>();
 
         return services;
     }

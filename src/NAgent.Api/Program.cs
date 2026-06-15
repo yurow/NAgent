@@ -22,6 +22,9 @@ builder.Host.UseSerilog();
 // Add services to the container.
 builder.Services.AddControllers();
 
+// ⭐ 添加内存缓存服务
+builder.Services.AddMemoryCache();
+
 // ⭐ 配置 JWT 认证服务
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey 未配置");
@@ -117,6 +120,10 @@ app.UseAuthentication();
 
 app.UseAuthorization();
 
+// ⭐ 添加静态文件支持（用于前端页面，必须在 MapControllers 之前）
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapControllers();
 
 // ⭐ 初始化 LLM 配置（使用 Scoped 服务）
@@ -130,9 +137,5 @@ using (var scope = app.Services.CreateScope())
     );
     await initializer.InitializeAsync();
 }
-
-// ⭐ 添加静态文件支持（用于前端页面）
-app.UseDefaultFiles();
-app.UseStaticFiles();
 
 app.Run();

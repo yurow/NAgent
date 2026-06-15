@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using NAgent.Application.Interfaces;
@@ -14,14 +13,17 @@ public class InitializationService : IInitializationService
 {
     private readonly IUserRepository _userRepository;
     private readonly IHostEnvironment _environment;
+    private readonly IPasswordHasher _passwordHasher;
     private const string InitFlagFileName = ".initialized";
 
     public InitializationService(
         IUserRepository userRepository,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IPasswordHasher passwordHasher)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _environment = environment ?? throw new ArgumentNullException(nameof(environment));
+        _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
     }
 
     /// <summary>
@@ -70,7 +72,7 @@ public class InitializationService : IInitializationService
             throw new InvalidOperationException($"邮箱 '{adminEmail}' 已被使用");
 
         // 4. 哈希密码
-        var passwordHash = HashPassword(adminPassword);
+        var passwordHash = _passwordHasher.HashPassword(adminPassword);
 
         // 5. 创建管理员用户
         var adminUser = User.CreateAdmin(adminUsername, adminEmail, passwordHash);
@@ -91,15 +93,5 @@ public class InitializationService : IInitializationService
         });
         
         await File.WriteAllTextAsync(initFlagPath, jsonContent, Encoding.UTF8, cancellationToken);
-    }
-
-    /// <summary>
-    /// 使用 SHA256 哈希密码（生产环境应使用 BCrypt 或 PBKDF2）
-    /// </summary>
-    private static string HashPassword(string password)
-    {
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-        return Convert.ToBase64String(hashedBytes);
     }
 }

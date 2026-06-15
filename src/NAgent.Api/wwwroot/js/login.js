@@ -1,6 +1,23 @@
 $(document).ready(function() {
     const API_BASE_URL = window.location.origin;
 
+    // ⭐ 页面加载时检查是否已登录，如果已登录则跳转到仪表盘
+    const existingToken = localStorage.getItem('jwt_token');
+    if (existingToken) {
+        $.ajax({
+            url: `${API_BASE_URL}/api/auth/validate`,
+            type: 'GET',
+            headers: {
+                'Authorization': `Bearer ${existingToken}`
+            },
+            success: function(response) {
+                if (response.success && response.data && response.data.isValid) {
+                    window.location.replace('/dashboard.html');
+                }
+            }
+        });
+    }
+
     // 表单提交处理
     $('#loginForm').on('submit', function(e) {
         e.preventDefault();

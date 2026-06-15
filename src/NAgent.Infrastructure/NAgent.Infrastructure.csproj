@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NAgent.Domain\NAgent.Domain.csproj" />
+    <ProjectReference Include="..\NAgent.AgentDomain\NAgent.AgentDomain.csproj" />
     <ProjectReference Include="..\NAgent.Application\NAgent.Application.csproj" />
     <ProjectReference Include="..\NAgent.Shared\NAgent.Shared.csproj" />
   </ItemGroup>
