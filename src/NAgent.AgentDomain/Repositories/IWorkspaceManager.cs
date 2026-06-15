@@ -31,9 +31,24 @@ public interface IWorkspaceManager
     string EnsureProjectWorkspace(Guid userId, Guid projectId);
 
     /// <summary>
+    /// 检查项目是否已初始化（init.md 是否存在）
+    /// </summary>
+    bool IsInitialized(Guid userId, Guid projectId);
+
+    /// <summary>
+    /// 确保 init.md 存在，不存在则创建（标记项目已初始化）
+    /// </summary>
+    string EnsureInitFile(Guid userId, Guid projectId, string projectName);
+
+    /// <summary>
     /// 检查 spec.md 是否存在，不存在则创建
     /// </summary>
     string EnsureSpecFile(Guid userId, Guid projectId);
+
+    /// <summary>
+    /// 写入 spec.md 完整内容（用于初始化时生成）
+    /// </summary>
+    void WriteSpecFile(Guid userId, Guid projectId, string content);
 
     /// <summary>
     /// 将用户问题追加到 spec.md

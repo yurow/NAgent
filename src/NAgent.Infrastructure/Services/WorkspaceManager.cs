@@ -128,6 +128,39 @@ public class WorkspaceManager : IWorkspaceManager
     }
 
     /// <summary>
+    /// 检查项目是否已初始化（init.md 是否存在）
+    /// </summary>
+    public bool IsInitialized(Guid userId, Guid projectId)
+    {
+        var projectPath = GetProjectWorkspacePath(userId, projectId);
+        var initPath = Path.Combine(projectPath, "init.md");
+        return File.Exists(initPath);
+    }
+
+    /// <summary>
+    /// 确保 init.md 存在，不存在则创建（标记项目已初始化）
+    /// </summary>
+    public string EnsureInitFile(Guid userId, Guid projectId, string projectName)
+    {
+        var projectPath = GetProjectWorkspacePath(userId, projectId);
+        var initPath = Path.Combine(projectPath, "init.md");
+
+        if (!File.Exists(initPath))
+        {
+            var content = $"# 项目初始化\n\n" +
+                         $"**项目名称**: {projectName}\n" +
+                         $"**项目ID**: {projectId}\n" +
+                         $"**用户ID**: {userId}\n" +
+                         $"**初始化时间**: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n" +
+                         $"**工作目录**: {projectPath}\n\n" +
+                         $"系统已初始化完成。工作目录已创建。\n";
+            File.WriteAllText(initPath, content);
+        }
+
+        return initPath;
+    }
+
+    /// <summary>
     /// 检查 spec.md 是否存在，不存在则创建
     /// </summary>
     public string EnsureSpecFile(Guid userId, Guid projectId)
@@ -147,6 +180,16 @@ public class WorkspaceManager : IWorkspaceManager
         }
 
         return specPath;
+    }
+
+    /// <summary>
+    /// 写入 spec.md 完整内容（用于初始化时生成）
+    /// </summary>
+    public void WriteSpecFile(Guid userId, Guid projectId, string content)
+    {
+        var projectPath = GetProjectWorkspacePath(userId, projectId);
+        var specPath = Path.Combine(projectPath, "spec.md");
+        File.WriteAllText(specPath, content);
     }
 
     /// <summary>
