@@ -46,7 +46,15 @@ public class AgentController : ControllerBase
             return BadRequest(ApiResponse<string>.FailureResponse("项目ID不能为空"));
         }
 
-        var command = new ExecuteAgentCommand(request.SessionId, request.UserInput, request.ProjectId);
+        // 从 JWT Token 获取当前用户ID
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(ApiResponse<string>.FailureResponse("无法获取用户信息"));
+        }
+
+        var command = new ExecuteAgentCommand(request.SessionId, request.UserInput, request.ProjectId, userId, request.ModelId);
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.Success)

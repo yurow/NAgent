@@ -120,22 +120,78 @@ public class WorkspaceManager : IWorkspaceManager
     }
 
     /// <summary>
-    /// 读取项目配置
+    /// 确保项目工作目录存在，并返回路径
     /// </summary>
-    public T? ReadProjectConfig<T>(Guid userId, Guid projectId) where T : class
+    public string EnsureProjectWorkspace(Guid userId, Guid projectId)
+    {
+        return GetProjectWorkspacePath(userId, projectId);
+    }
+
+    /// <summary>
+    /// 检查 spec.md 是否存在，不存在则创建
+    /// </summary>
+    public string EnsureSpecFile(Guid userId, Guid projectId)
     {
         var projectPath = GetProjectWorkspacePath(userId, projectId);
-        var configPath = Path.Combine(projectPath, "project.json");
+        var specPath = Path.Combine(projectPath, "spec.md");
 
-        if (!File.Exists(configPath))
+        if (!File.Exists(specPath))
         {
-            return null;
+            var header = $"# 项目规范文档\n\n" +
+                        $"**项目ID**: {projectId}\n" +
+                        $"**创建时间**: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n" +
+                        $"**工作目录**: {projectPath}\n\n" +
+                        $"## 对话记录\n\n" +
+                        $"本文档记录用户与 AI Agent 的所有对话，用于追踪项目需求和流程。\n\n";
+            File.WriteAllText(specPath, header);
         }
 
-        var json = File.ReadAllText(configPath);
-        return System.Text.Json.JsonSerializer.Deserialize<T>(json, new System.Text.Json.JsonSerializerOptions
+        return specPath;
+    }
+
+    /// <summary>
+    /// 将用户问题追加到 spec.md
+    /// </summary>
+    public void AppendQuestionToSpec(Guid userId, Guid projectId, string question, string? answer = null)
+    {
+        var specPath = EnsureSpecFile(userId, projectId);
+        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+
+        var entry = $"### [{timestamp}] 用户提问\n\n" +
+                   $"**问题**: {question}\n\n";
+
+        if (!string.IsNullOrEmpty(answer))
         {
-            PropertyNameCaseInsensitive = true
-        });
+            entry += $"**AI回复**: {answer}\n\n";
+        }
+
+        entry += "---\n\n";
+
+        File.AppendAllText(specPath, entry);
+    }
+
+    /// <summary>
+    /// 读取 spec.md 内容
+    /// </summary>
+    public string ReadSpecFile(Guid userId, Guid projectId)
+    {
+        var specPath = EnsureSpecFile(userId, projectId);
+        return File.ReadAllText(specPath);
+    }
+
+    /// <summary>
+    /// 获取工作目录下的文件列表
+    /// </summary>
+    public List<string> GetWorkspaceFiles(Guid userId, Guid projectId)
+    {
+        var projectPath = GetProjectWorkspacePath(userId, projectId);
+        if (!Directory.Exists(projectPath))
+        {
+            return new List<string>();
+        }
+
+        return Directory.GetFiles(projectPath, "*", SearchOption.AllDirectories)
+            .Select(f => f.Replace(projectPath, "").TrimStart(Path.DirectorySeparatorChar))
+            .ToList();
     }
 }

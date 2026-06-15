@@ -65,6 +65,14 @@ public class AgentSession
     }
 
     /// <summary>
+    /// 获取上下文变量
+    /// </summary>
+    public string? GetContextVariable(string key)
+    {
+        return ContextVariables.TryGetValue(key, out var value) ? value : null;
+    }
+
+    /// <summary>
     /// 获取最近的N条消息
     /// </summary>
     public List<ConversationMessage> GetRecentMessages(int count = 10)

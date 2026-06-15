@@ -155,10 +155,42 @@ public class LangChainAgentEngine : IAgentEngine
         var recentMessages = session.GetRecentMessages(5);
         var history = string.Join("\n", recentMessages.Select(m => $"{m.Role}: {m.Content}"));
 
-        return $@"历史对话:
-{history}
+        // 获取工作目录上下文变量
+        var workspacePath = session.GetContextVariable("workspace_path") ?? "未设置";
+        var specContent = session.GetContextVariable("spec_content") ?? "";
+        var workspaceFiles = session.GetContextVariable("workspace_files") ?? "";
 
-当前输入: {currentInput}";
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("历史对话:");
+        sb.AppendLine(history);
+        sb.AppendLine();
+
+        // 添加工作目录上下文
+        sb.AppendLine($"当前工作目录: {workspacePath}");
+        sb.AppendLine();
+
+        // 添加文件列表
+        if (!string.IsNullOrWhiteSpace(workspaceFiles))
+        {
+            sb.AppendLine("工作目录文件列表:");
+            sb.AppendLine(workspaceFiles);
+            sb.AppendLine();
+        }
+
+        // 添加 spec.md 内容摘要（只取前 3000 字符避免过长）
+        if (!string.IsNullOrWhiteSpace(specContent))
+        {
+            var specPreview = specContent.Length > 3000
+                ? specContent[..3000] + "\n\n... [spec.md 内容已截断]"
+                : specContent;
+            sb.AppendLine("项目规范文档 (spec.md):");
+            sb.AppendLine(specPreview);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"当前输入: {currentInput}");
+
+        return sb.ToString();
     }
 
     private string BuildIntentPrompt(AgentSession session, string userInput)
