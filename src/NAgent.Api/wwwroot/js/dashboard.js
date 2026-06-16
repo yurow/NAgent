@@ -957,10 +957,39 @@ function getCurrentTime() {
 
 // HTML 转义（防止 XSS）
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
+
+// JS 字符串转义（用于 onclick 属性）
+function escapeJsString(text) {
+    if (!text) return '';
+    return text
+        .replace(/\\/g, '\\\\')
+        .replace(/`/g, '\\`')
+        .replace(/\$/g, '\\$');
+}
+
+// 查看定义模态框
+function viewDefinition(name, content, type) {
+    $('#definitionModalTitle').text(`${type === 'yaml' ? '🔧' : '📖'} ${name} - 定义内容`);
+    $('#definitionContent').text(content || '无内容');
+    $('#definitionModal').show();
+}
+
+// 关闭定义模态框
+function closeDefinitionModal() {
+    $('#definitionModal').hide();
+}
+
+// 点击模态框外部关闭
+$(document).on('click', '#definitionModal', function(e) {
+    if (e.target === this) {
+        closeDefinitionModal();
+    }
+});
 
 // 加载用户列表（管理员）
 function loadUserList() {
@@ -1137,26 +1166,41 @@ function loadToolsList() {
 
 // 显示 Tools 列表
 function displayToolsList(tools) {
-    let html = '<div class="provider-list">';
+    if (!tools || tools.length === 0) {
+        $('#toolsListContainer').html('<p class="section-desc">暂无可用工具。</p>');
+        return;
+    }
+
+    let html = '<div class="tool-grid">';
 
     tools.forEach(function(tool) {
         const categoryColor = getToolCategoryColor(tool.category);
         const securityColor = getSecurityColor(tool.securityLevel);
+        const hasContent = tool.content && tool.content.length > 0;
 
         html += `
-            <div class="provider-card">
-                <h3>${escapeHtml(tool.name)}</h3>
-                <p><strong>分类:</strong> <span class="badge" style="background: ${categoryColor};">${escapeHtml(tool.category)}</span></p>
-                <p><strong>安全等级:</strong> <span class="badge" style="background: ${securityColor};">${escapeHtml(tool.securityLevel)}</span></p>
-                <p><strong>描述:</strong> ${escapeHtml(tool.description)}</p>
-                <p><strong>来源:</strong> ${escapeHtml(tool.source)}</p>
-                <p><strong>状态:</strong> <span class="badge" style="background: ${tool.isEnabled ? '#4CAF50' : '#f44336'};">${tool.isEnabled ? '启用' : '禁用'}</span></p>
+            <div class="tool-card">
+                <div class="tool-card-header">
+                    <h3>${escapeHtml(tool.name)}</h3>
+                    <span class="badge" style="background: ${tool.isEnabled ? '#4CAF50' : '#f44336'};">${tool.isEnabled ? '启用' : '禁用'}</span>
+                </div>
+                <div class="tool-card-body">
+                    <div class="tool-meta">
+                        <span class="badge" style="background: ${categoryColor};">${escapeHtml(tool.category)}</span>
+                        <span class="badge" style="background: ${securityColor};">${escapeHtml(tool.securityLevel)}</span>
+                    </div>
+                    <p class="tool-desc">${escapeHtml(tool.description)}</p>
+                    <p class="tool-source">来源: ${escapeHtml(tool.source)}</p>
+                </div>
+                <div class="tool-card-footer">
+                    ${hasContent ? `<button class="btn-view" onclick="viewDefinition('${escapeHtml(tool.name)}', \`${escapeJsString(tool.content)}\`, 'yaml')">👁️ 查看定义</button>` : ''}
+                </div>
             </div>
         `;
     });
 
     html += '</div>';
-    html += `<p class="section-desc" style="margin-top: 16px; color: #888;">共 ${tools.length} 个系统内置工具。工具在项目隔离的工作空间中执行。</p>`;
+    html += `<p class="section-desc" style="margin-top: 16px; color: #888;">共 ${tools.length} 个工具</p>`;
     $('#toolsListContainer').html(html);
 }
 
@@ -1252,28 +1296,37 @@ function displaySkillsList(skills) {
         return;
     }
 
-    let html = '<div class="provider-list">';
+    let html = '<div class="skill-grid">';
     skills.forEach(skill => {
         const statusText = skill.isEnabled ? '已启用' : '已禁用';
         const statusColor = skill.isEnabled ? '#4CAF50' : '#999';
         const toolsHtml = skill.toolNames && skill.toolNames.length > 0 
             ? skill.toolNames.map(t => `<span class="badge" style="background: #2196F3; margin-right: 4px;">${escapeHtml(t)}</span>`).join('') 
             : '<span style="color: #888;">无关联工具</span>';
+        const hasContent = skill.content && skill.content.length > 0;
         
         html += `
-            <div class="provider-card">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="skill-card">
+                <div class="skill-card-header">
                     <h3>${escapeHtml(skill.name)}</h3>
                     <span class="badge" style="background: ${statusColor};">${statusText}</span>
                 </div>
-                <p><strong>分类:</strong> ${escapeHtml(skill.category)}</p>
-                <p><strong>版本:</strong> ${escapeHtml(skill.version)}</p>
-                <p><strong>描述:</strong> ${escapeHtml(skill.description)}</p>
-                <p><strong>关联工具:</strong> ${toolsHtml}</p>
+                <div class="skill-card-body">
+                    <div class="skill-meta">
+                        <span class="badge" style="background: #667eea;">${escapeHtml(skill.category)}</span>
+                        <span style="color: #888; font-size: 12px;">v${escapeHtml(skill.version)}</span>
+                    </div>
+                    <p class="skill-desc">${escapeHtml(skill.description)}</p>
+                    <p class="skill-tools"><strong>关联工具:</strong> ${toolsHtml}</p>
+                </div>
+                <div class="skill-card-footer">
+                    ${hasContent ? `<button class="btn-view" onclick="viewDefinition('${escapeHtml(skill.name)}', \`${escapeJsString(skill.content)}\`, 'markdown')">👁️ 查看定义</button>` : ''}
+                </div>
             </div>
         `;
     });
     html += '</div>';
+    html += `<p class="section-desc" style="margin-top: 16px; color: #888;">共 ${skills.length} 个 Skills</p>`;
     $('#skillsListContainer').html(html);
 }
 

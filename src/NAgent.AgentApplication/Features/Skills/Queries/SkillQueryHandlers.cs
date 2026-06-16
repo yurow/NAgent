@@ -40,7 +40,8 @@ public class GetAllSkillsQueryHandler : IRequestHandler<GetAllSkillsQuery, List<
                 Output = e.Output,
                 Explanation = e.Explanation
             }).ToList(),
-            CreatedAt = skill.CreatedAt
+            CreatedAt = skill.CreatedAt,
+            Content = skill.MarkdownContent
         };
     }
 }

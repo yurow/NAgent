@@ -1016,6 +1016,108 @@ body {
     color: #333;
 }
 
+/* ===== Tools & Skills 卡片网格 ===== */
+.tool-grid,
+.skill-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.tool-card,
+.skill-card {
+    background: white;
+    border-radius: 12px;
+    padding: 0;
+    border: 1px solid #e8e8e8;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.tool-card:hover,
+.skill-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.tool-card-header,
+.skill-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fafbfc;
+}
+
+.tool-card-header h3,
+.skill-card-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    margin: 0;
+}
+
+.tool-card-body,
+.skill-card-body {
+    padding: 12px 16px;
+    flex: 1;
+}
+
+.tool-meta,
+.skill-meta {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.tool-desc,
+.skill-desc {
+    font-size: 13px;
+    color: #555;
+    line-height: 1.5;
+    margin-bottom: 8px;
+}
+
+.tool-source {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 0;
+}
+
+.skill-tools {
+    font-size: 12px;
+    color: #666;
+    margin-top: 8px;
+}
+
+.tool-card-footer,
+.skill-card-footer {
+    padding: 10px 16px 14px;
+    border-top: 1px solid #f0f0f0;
+    background: #fafbfc;
+}
+
+/* 查看按钮 */
+.btn-view {
+    background: #667eea;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.btn-view:hover {
+    background: #5a6fd6;
+}
+
 /* 提示框 */
 .tooltip {
     position: relative;

@@ -56,7 +56,8 @@ public class ToolsController : ControllerBase
                 "built-in",
                 "Low",
                 "system",
-                true
+                true,
+                null
             ));
         }
 
@@ -73,7 +74,8 @@ public class ToolsController : ControllerBase
                 tool.Category,
                 tool.SecurityLevel.ToString(),
                 $"tools/{tool.FilePath}",
-                tool.IsEnabled
+                tool.IsEnabled,
+                tool.YamlContent
             ));
         }
 
@@ -98,7 +100,8 @@ public class ToolsController : ControllerBase
                 "built-in",
                 "Low",
                 "system",
-                true
+                true,
+                null
             );
             return Ok(ApiResponse<ToolInfoDto>.SuccessResponse(dto));
         }
@@ -114,7 +117,8 @@ public class ToolsController : ControllerBase
             yamlTool.Category,
             yamlTool.SecurityLevel.ToString(),
             $"tools/{yamlTool.FilePath}",
-            yamlTool.IsEnabled
+            yamlTool.IsEnabled,
+            yamlTool.YamlContent
         );
 
         return Ok(ApiResponse<ToolInfoDto>.SuccessResponse(yamlDto));
@@ -168,5 +172,6 @@ public record ToolInfoDto(
     string Category,
     string SecurityLevel,
     string Source,
-    bool IsEnabled
+    bool IsEnabled,
+    string? Content = null
 );

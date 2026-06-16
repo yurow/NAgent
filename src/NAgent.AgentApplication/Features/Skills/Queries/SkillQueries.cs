@@ -37,6 +37,7 @@ public class SkillDto
     public List<string> ToolNames { get; set; } = new();
     public List<SkillExampleDto> Examples { get; set; } = new();
     public DateTime CreatedAt { get; set; }
+    public string? Content { get; set; }
 }
 
 /// <summary>

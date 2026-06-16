@@ -302,6 +302,19 @@
                 </div>
             </div>
 
+            <!-- 查看定义内容模态框（Tools/Skills共用） -->
+            <div id="definitionModal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 800px; width: 90%;">
+                    <div class="modal-header">
+                        <h3 id="definitionModalTitle">查看定义</h3>
+                        <span class="close-btn" onclick="closeDefinitionModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <pre id="definitionContent" style="background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.6; max-height: 60vh; overflow-y: auto;"></pre>
+                    </div>
+                </div>
+            </div>
+
             <!-- 添加/编辑模型模态框 -->
             <div id="modelModal" class="modal" style="display: none;">
                 <div class="modal-content">
