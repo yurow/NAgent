@@ -148,7 +148,14 @@ public class BaiduWebSearchTool
         client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/");
         client.DefaultRequestHeaders.Add("Connection", "keep-alive");
 
-        var html = await client.GetStringAsync(url, cancellationToken);
+        // 手动读取字节流并检测编码，避免 GBK/GB2312 乱码
+        var response = await client.GetAsync(url, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var encoding = DetectEncoding(bytes, response.Content.Headers.ContentType?.CharSet);
+        var html = encoding.GetString(bytes);
+
         return ParseBaiduResults(html, maxResults);
     }
 
@@ -306,6 +313,50 @@ public class BaiduWebSearchTool
             return false;
 
         return true;
+    }
+
+    /// <summary>
+    /// 检测 HTML 字节流的编码
+    /// 优先使用 HTTP Header 的 charset，其次检测 HTML meta 标签
+    /// </summary>
+    private static System.Text.Encoding DetectEncoding(byte[] bytes, string? headerCharset)
+    {
+        // 1. 优先使用 HTTP Header 中的 charset
+        if (!string.IsNullOrWhiteSpace(headerCharset))
+        {
+            try
+            {
+                return System.Text.Encoding.GetEncoding(headerCharset);
+            }
+            catch { /* 不支持的编码，继续检测 */ }
+        }
+
+        // 2. 检测 HTML meta 标签中的 charset
+        var previewLength = Math.Min(bytes.Length, 2048);
+        var previewBytes = new byte[previewLength];
+        Buffer.BlockCopy(bytes, 0, previewBytes, 0, previewLength);
+
+        // 先用 UTF-8 读取前 2048 字节（不抛异常）
+        var preview = System.Text.Encoding.UTF8.GetString(previewBytes);
+
+        // 匹配 <meta charset="xxx"> 或 <meta http-equiv="Content-Type" content="text/html; charset=xxx">
+        var charsetMatch = System.Text.RegularExpressions.Regex.Match(
+            preview,
+            @"<meta[^>]*charset=[""']?([^""'>\s]+)[""']?",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (charsetMatch.Success)
+        {
+            var metaCharset = charsetMatch.Groups[1].Value.Trim();
+            try
+            {
+                return System.Text.Encoding.GetEncoding(metaCharset);
+            }
+            catch { /* 不支持的编码，回退到 UTF-8 */ }
+        }
+
+        // 3. 回退到 UTF-8
+        return System.Text.Encoding.UTF8;
     }
 
     /// <summary>
