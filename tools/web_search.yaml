@@ -1,5 +1,5 @@
 name: web_search
-description: 使用 DuckDuckGo 进行网络搜索，获取实时信息。参数：query(搜索关键词), max_results(最大结果数,默认5)
+description: 使用百度搜索进行网络搜索，获取实时信息。参数：query(搜索关键词), max_results(最大结果数,默认5)。注意：搜索频率限制为每5秒一次
 category: search
 security_level: Low
 parameters:
@@ -8,7 +8,7 @@ parameters:
     type: string
     required: true
   - name: max_results
-    description: 最大结果数
+    description: 最大结果数(1-10)
     type: integer
     required: false
     default: "5"

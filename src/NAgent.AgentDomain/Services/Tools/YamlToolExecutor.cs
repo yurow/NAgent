@@ -72,50 +72,15 @@ public class YamlToolExecutor : IToolExecutor
     }
 
     /// <summary>
-    /// Web 搜索（DuckDuckGo）
+    /// Web 搜索（百度搜索 - 基于 HtmlAgilityPack 的原生 C# 爬虫）
     /// </summary>
     private async Task<ToolExecutionResult> ExecuteWebSearchAsync(
         Dictionary<string, object> parameters,
         CancellationToken cancellationToken)
     {
         var query = GetParameter<string>(parameters, "query");
-        if (string.IsNullOrWhiteSpace(query))
-            return ToolExecutionResult.Fail("搜索关键词不能为空");
-
         var maxResults = GetParameter<int>(parameters, "max_results", 5);
-        maxResults = Math.Clamp(maxResults, 1, 10);
-
-        // 使用 DuckDuckGo HTML 搜索
-        var encodedQuery = System.Web.HttpUtility.UrlEncode(query);
-        var url = $"https://api.duckduckgo.com/?q={encodedQuery}&format=json&skip_disambig=1";
-
-        using var handler = new HttpClientHandler
-        {
-            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-        };
-        using var client = new HttpClient(handler);
-        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
-        client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
-        client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
-        client.DefaultRequestHeaders.Add("Referer", "https://duckduckgo.com/");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "document");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "navigate");
-        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-site");
-        client.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
-        client.Timeout = TimeSpan.FromSeconds(30);
-
-        var response = await client.GetStringAsync(url, cancellationToken);
-        var results = ParseDuckDuckGoResults(response, maxResults);
-
-        if (results.Count == 0)
-            return ToolExecutionResult.Ok("未找到相关搜索结果。");
-
-        var output = FormatSearchResults(results);
-        return ToolExecutionResult.Ok(output, new Dictionary<string, object>
-        {
-            ["query"] = query,
-            ["result_count"] = results.Count
-        });
+        return await BaiduWebSearchTool.SearchAsync(query, maxResults, cancellationToken);
     }
 
     /// <summary>
@@ -388,60 +353,6 @@ public class YamlToolExecutor : IToolExecutor
 
     #region 辅助方法
 
-    private List<SearchResult> ParseDuckDuckGoResults(string html, int maxResults)
-    {
-        var results = new List<SearchResult>();
-        var resultDivs = html.Split(new[] { "class=\"result\"" }, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var div in resultDivs.Skip(1).Take(maxResults))
-        {
-            try
-            {
-                var title = StripHtml(ExtractBetween(div, "class=\"result__a\"", "</a>"));
-                var snippet = StripHtml(ExtractBetween(div, "class=\"result__snippet\"", "</a>"));
-                var url = System.Net.WebUtility.HtmlDecode(ExtractBetween(div, "href=\"", "\""));
-
-                if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(snippet))
-                {
-                    results.Add(new SearchResult { Title = title.Trim(), Snippet = snippet.Trim(), Url = url.Trim() });
-                }
-            }
-            catch { }
-        }
-
-        return results;
-    }
-
-    private string FormatSearchResults(List<SearchResult> results)
-    {
-        var lines = new List<string> { $"找到 {results.Count} 条搜索结果：\n" };
-        for (int i = 0; i < results.Count; i++)
-        {
-            var r = results[i];
-            lines.Add($"{i + 1}. {r.Title}");
-            lines.Add($"   {r.Snippet}");
-            lines.Add($"   链接: {r.Url}\n");
-        }
-        return string.Join("\n", lines);
-    }
-
-    private string ExtractBetween(string source, string start, string end)
-    {
-        var startIndex = source.IndexOf(start, StringComparison.OrdinalIgnoreCase);
-        if (startIndex < 0) return "";
-        startIndex += start.Length;
-        var endIndex = source.IndexOf(end, startIndex, StringComparison.OrdinalIgnoreCase);
-        if (endIndex < 0) return "";
-        return source[startIndex..endIndex];
-    }
-
-    private string StripHtml(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return "";
-        var result = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", "");
-        return System.Net.WebUtility.HtmlDecode(result);
-    }
-
     private string? FindWorkspaceBasePath()
     {
         // 优先使用 IWorkspaceManager 提供的基础路径
@@ -503,13 +414,6 @@ public class YamlToolExecutor : IToolExecutor
         }
 
         return defaultValue;
-    }
-
-    private class SearchResult
-    {
-        public string Title { get; set; } = "";
-        public string Snippet { get; set; } = "";
-        public string Url { get; set; } = "";
     }
 
     #endregion
