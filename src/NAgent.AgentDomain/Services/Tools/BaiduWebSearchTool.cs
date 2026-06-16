@@ -317,46 +317,67 @@ public class BaiduWebSearchTool
 
     /// <summary>
     /// 检测 HTML 字节流的编码
-    /// 优先使用 HTTP Header 的 charset，其次检测 HTML meta 标签
+    /// 百度页面实际使用 GBK/GB2312 编码，但 meta 标签可能声明为 UTF-8
+    /// 通过统计中文字符比例来判断实际编码
     /// </summary>
     private static System.Text.Encoding DetectEncoding(byte[] bytes, string? headerCharset)
     {
-        // 1. 优先使用 HTTP Header 中的 charset
+        // 1. 优先使用 HTTP Header 中的 charset（最可靠）
         if (!string.IsNullOrWhiteSpace(headerCharset))
         {
             try
             {
-                return System.Text.Encoding.GetEncoding(headerCharset);
+                var enc = System.Text.Encoding.GetEncoding(headerCharset);
+                if (enc.CodePage != 65001) // 不是 UTF-8 就直接用
+                    return enc;
             }
             catch { /* 不支持的编码，继续检测 */ }
         }
 
-        // 2. 检测 HTML meta 标签中的 charset
-        var previewLength = Math.Min(bytes.Length, 2048);
-        var previewBytes = new byte[previewLength];
-        Buffer.BlockCopy(bytes, 0, previewBytes, 0, previewLength);
-
-        // 先用 UTF-8 读取前 2048 字节（不抛异常）
-        var preview = System.Text.Encoding.UTF8.GetString(previewBytes);
-
-        // 匹配 <meta charset="xxx"> 或 <meta http-equiv="Content-Type" content="text/html; charset=xxx">
-        var charsetMatch = System.Text.RegularExpressions.Regex.Match(
-            preview,
-            @"<meta[^>]*charset=[""']?([^""'>\s]+)[""']?",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-        if (charsetMatch.Success)
+        // 2. 尝试用 GBK 解码，统计有效中文字符比例
+        try
         {
-            var metaCharset = charsetMatch.Groups[1].Value.Trim();
-            try
-            {
-                return System.Text.Encoding.GetEncoding(metaCharset);
-            }
-            catch { /* 不支持的编码，回退到 UTF-8 */ }
+            var gbk = System.Text.Encoding.GetEncoding("gbk");
+            var gbkText = gbk.GetString(bytes);
+            var gbkValidRatio = CalculateChineseRatio(gbkText);
+
+            var utf8Text = System.Text.Encoding.UTF8.GetString(bytes);
+            var utf8ValidRatio = CalculateChineseRatio(utf8Text);
+
+            // GBK 解码出的中文字符比例明显高于 UTF-8，说明实际是 GBK
+            if (gbkValidRatio > utf8ValidRatio + 0.1)
+                return gbk;
         }
+        catch { /* 忽略异常 */ }
 
         // 3. 回退到 UTF-8
         return System.Text.Encoding.UTF8;
+    }
+
+    /// <summary>
+    /// 计算字符串中有效中文字符的比例
+    /// </summary>
+    private static double CalculateChineseRatio(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return 0;
+
+        int chineseCount = 0;
+        int totalCount = 0;
+
+        foreach (var c in text)
+        {
+            // 只统计汉字、字母、数字、常见标点
+            if (char.IsLetterOrDigit(c) || char.IsPunctuation(c) || c == ' ')
+            {
+                totalCount++;
+                // 中文字符范围：\u4e00-\u9fff（CJK 统一表意文字）
+                if (c >= '\u4e00' && c <= '\u9fff')
+                    chineseCount++;
+            }
+        }
+
+        return totalCount == 0 ? 0 : (double)chineseCount / totalCount;
     }
 
     /// <summary>
