@@ -61,9 +61,19 @@ public interface IWorkspaceManager
     string ReadSpecFile(Guid userId, Guid projectId);
 
     /// <summary>
-    /// 获取工作目录下的文件列表
+    /// 获取工作目录下的文件列表（相对路径）
     /// </summary>
     List<string> GetWorkspaceFiles(Guid userId, Guid projectId);
+
+    /// <summary>
+    /// 获取项目工作空间的相对路径（相对于工作空间根目录）
+    /// </summary>
+    string GetProjectRelativePath(Guid userId, Guid projectId);
+
+    /// <summary>
+    /// 获取工作空间基础路径（绝对路径，仅内部使用）
+    /// </summary>
+    string GetWorkspaceBasePath();
 
     /// <summary>
     /// 获取项目记忆目录路径（临时记忆，按日期组织）

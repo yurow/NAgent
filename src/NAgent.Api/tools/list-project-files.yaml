@@ -1,0 +1,27 @@
+name: list_project_files
+description: 遍历项目工作空间的文件结构，返回所有文件和目录的相对路径、类型和大小。自动忽略 node_modules、.git、bin、obj 等目录。
+category: file_operations
+security_level: low
+
+parameters:
+  - name: pattern
+    description: 文件名过滤模式，支持通配符（如 *.cs、*.json）
+    type: string
+    required: false
+    default: "*"
+
+  - name: include_dirs
+    description: 是否在结果中包含目录条目
+    type: boolean
+    required: false
+    default: true
+
+  - name: max_depth
+    description: 最大遍历深度（默认10层）
+    type: integer
+    required: false
+    default: 10
+
+execution:
+  type: local
+  timeout_seconds: 60

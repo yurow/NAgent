@@ -1,0 +1,29 @@
+name: local_file_write
+description: 在项目工作空间内创建或修改文件。参数：file_path(相对路径), content(文件内容), mode(写入模式write/append,默认write), create_dirs(是否自动创建目录,默认true)
+category: file
+security_level: Medium
+parameters:
+  - name: file_path
+    description: 相对项目目录的文件路径
+    type: string
+    required: true
+  - name: content
+    description: 文件内容
+    type: string
+    required: true
+  - name: mode
+    description: 写入模式
+    type: string
+    required: false
+    default: "write"
+    enum:
+      - write
+      - append
+  - name: create_dirs
+    description: 是否自动创建目录
+    type: boolean
+    required: false
+    default: "true"
+execution:
+  type: local
+  timeout_seconds: 10

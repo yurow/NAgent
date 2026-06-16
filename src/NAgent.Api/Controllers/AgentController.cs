@@ -111,6 +111,7 @@ public class AgentController : ControllerBase
 
         // 1. 确保工作目录存在
         var workspacePath = _workspaceManager.EnsureProjectWorkspace(userId, projectId);
+        var relativePath = _workspaceManager.GetProjectRelativePath(userId, projectId);
 
         // 2. 检查是否已初始化（未初始化时走 execute 端点的初始化逻辑）
         var isInitialized = _workspaceManager.IsInitialized(userId, projectId);
@@ -151,7 +152,7 @@ public class AgentController : ControllerBase
 
         var contextPrompt = $@"你是 NAgent AI 助手。你在一个项目的工作目录中协助用户。
 
-当前工作目录: {workspacePath}
+当前工作目录(相对路径): {relativePath}
 
 工作目录文件列表:
 {string.Join("\n", files)}

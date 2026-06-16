@@ -1,0 +1,8 @@
+name: list_workspace_files
+description: 遍历并返回项目工作目录下所有文件名称和路径。无需参数，自动使用当前项目工作目录。
+category: file
+security_level: Low
+parameters: []
+execution:
+  type: local
+  timeout_seconds: 10

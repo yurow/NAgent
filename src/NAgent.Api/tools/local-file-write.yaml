@@ -1,0 +1,34 @@
+name: local_file_write
+description: 在项目工作空间内创建或修改文件。支持创建新文件、覆盖写入、追加内容。自动创建不存在的目录。
+category: file_operations
+security_level: low
+
+parameters:
+  - name: file_path
+    description: 相对项目目录的文件路径（使用正斜杠，如 src/main.cs）
+    type: string
+    required: true
+
+  - name: content
+    description: 要写入的文件内容
+    type: string
+    required: true
+
+  - name: mode
+    description: 写入模式
+    type: string
+    required: false
+    default: "write"
+    enum:
+      - write
+      - append
+
+  - name: create_dirs
+    description: 是否自动创建不存在的父目录
+    type: boolean
+    required: false
+    default: true
+
+execution:
+  type: local
+  timeout_seconds: 30

@@ -138,12 +138,28 @@ public class WorkspaceManager : IWorkspaceManager
     }
 
     /// <summary>
+    /// 获取相对工作目录路径（用于显示）
+    /// </summary>
+    public string GetRelativePath(string fullPath)
+    {
+        if (string.IsNullOrEmpty(fullPath)) return "";
+        var fullWorkspace = Path.GetFullPath(_workspaceBasePath);
+        var fullTarget = Path.GetFullPath(fullPath);
+        if (fullTarget.StartsWith(fullWorkspace, StringComparison.OrdinalIgnoreCase))
+        {
+            return fullTarget[fullWorkspace.Length..].TrimStart(Path.DirectorySeparatorChar);
+        }
+        return fullPath;
+    }
+
+    /// <summary>
     /// 确保 init.md 存在，不存在则创建（标记项目已初始化）
     /// </summary>
     public string EnsureInitFile(Guid userId, Guid projectId, string projectName)
     {
         var projectPath = GetProjectWorkspacePath(userId, projectId);
         var initPath = Path.Combine(projectPath, "init.md");
+        var relativePath = GetRelativePath(projectPath);
 
         if (!File.Exists(initPath))
         {
@@ -152,7 +168,7 @@ public class WorkspaceManager : IWorkspaceManager
                          $"**项目ID**: {projectId}\n" +
                          $"**用户ID**: {userId}\n" +
                          $"**初始化时间**: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n" +
-                         $"**工作目录**: {projectPath}\n\n" +
+                         $"**工作目录**: workspace/{relativePath}\n\n" +
                          $"系统已初始化完成。工作目录已创建。\n";
             File.WriteAllText(initPath, content);
         }
@@ -167,13 +183,14 @@ public class WorkspaceManager : IWorkspaceManager
     {
         var projectPath = GetProjectWorkspacePath(userId, projectId);
         var specPath = Path.Combine(projectPath, "spec.md");
+        var relativePath = GetRelativePath(projectPath);
 
         if (!File.Exists(specPath))
         {
             var header = $"# 项目规范文档\n\n" +
                         $"**项目ID**: {projectId}\n" +
                         $"**创建时间**: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n" +
-                        $"**工作目录**: {projectPath}\n\n" +
+                        $"**工作目录**: workspace/{relativePath}\n\n" +
                         $"## 对话记录\n\n" +
                         $"本文档记录用户与 AI Agent 的所有对话，用于追踪项目需求和流程。\n\n";
             File.WriteAllText(specPath, header);
@@ -223,7 +240,7 @@ public class WorkspaceManager : IWorkspaceManager
     }
 
     /// <summary>
-    /// 获取工作目录下的文件列表
+    /// 获取工作目录下的文件列表（相对路径）
     /// </summary>
     public List<string> GetWorkspaceFiles(Guid userId, Guid projectId)
     {
@@ -234,8 +251,25 @@ public class WorkspaceManager : IWorkspaceManager
         }
 
         return Directory.GetFiles(projectPath, "*", SearchOption.AllDirectories)
-            .Select(f => f.Replace(projectPath, "").TrimStart(Path.DirectorySeparatorChar))
+            .Select(f => Path.GetRelativePath(projectPath, f).Replace('\\', '/'))
             .ToList();
+    }
+
+    /// <summary>
+    /// 获取项目工作空间的相对路径（相对于工作空间根目录）
+    /// </summary>
+    public string GetProjectRelativePath(Guid userId, Guid projectId)
+    {
+        var projectPath = GetProjectWorkspacePath(userId, projectId);
+        return Path.GetRelativePath(_workspaceBasePath, projectPath).Replace('\\', '/');
+    }
+
+    /// <summary>
+    /// 获取工作空间基础路径
+    /// </summary>
+    public string GetWorkspaceBasePath()
+    {
+        return _workspaceBasePath;
     }
 
     /// <summary>

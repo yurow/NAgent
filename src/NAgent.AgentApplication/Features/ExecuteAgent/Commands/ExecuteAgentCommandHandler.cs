@@ -72,6 +72,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
 
             // 3. 确保工作目录存在
             var workspacePath = _workspaceManager.EnsureProjectWorkspace(userId, projectId);
+            var relativePath = _workspaceManager.GetProjectRelativePath(userId, projectId);
 
             // 4. 检查是否已初始化
             var isInitialized = _workspaceManager.IsInitialized(userId, projectId);
@@ -80,13 +81,13 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
             {
                 // 首次对话：执行项目初始化流程
                 return await HandleInitializationAsync(
-                    request, userId, projectId, project, workspacePath, 
+                    request, userId, projectId, project, relativePath, 
                     filterResult.CleanedInput, cancellationToken);
             }
 
             // 5. 已初始化：正常对话流程
             return await HandleNormalChatAsync(
-                request, userId, projectId, workspacePath, 
+                request, userId, projectId, relativePath, 
                 filterResult.CleanedInput, cancellationToken);
         }
         catch (Exception ex)
@@ -100,7 +101,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
     /// </summary>
     private async Task<ExecuteAgentResult> HandleInitializationAsync(
         ExecuteAgentCommand request, Guid userId, Guid projectId, 
-        AgentDomain.Entities.Project project, string workspacePath, string userInput,
+        AgentDomain.Entities.Project project, string relativePath, string userInput,
         CancellationToken cancellationToken)
     {
         // 1. 创建 init.md 标记初始化
@@ -120,7 +121,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
 
 项目名称: {project.Name}
 项目描述: {project.Description ?? "无"}
-工作目录: {workspacePath}
+工作目录(相对路径): {relativePath}
 用户首次输入: {userInput}
 
 当前系统可用的 Skills:
@@ -168,7 +169,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
 **项目名称**: {project.Name}
 **项目ID**: {projectId}
 **创建时间**: {timestamp} UTC
-**工作目录**: {workspacePath}
+**工作目录(相对路径)**: {relativePath}
 
 ---
 
@@ -196,7 +197,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         _workspaceManager.WriteSpecFile(userId, projectId, specContent);
 
         // 7. 构建友好的初始化回复
-        var reply = $"项目工作目录已创建：`{workspacePath}`\n\n" +
+        var reply = $"项目工作目录已创建：`{relativePath}`\n\n" +
                    $"已为你初始化项目 **{project.Name}**，并完成了项目分析：\n\n" +
                    $"---\n\n" +
                    $"{analysisResult}\n\n" +
@@ -219,14 +220,14 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
     /// 正常对话流程
     /// </summary>
     private async Task<ExecuteAgentResult> HandleNormalChatAsync(
-        ExecuteAgentCommand request, Guid userId, Guid projectId, string workspacePath,
+        ExecuteAgentCommand request, Guid userId, Guid projectId, string relativePath,
         string userInput, CancellationToken cancellationToken)
     {
         // 1. 加载或创建会话
         var session = await GetOrCreateSessionAsync(request.SessionId, projectId, cancellationToken);
 
-        // 2. 设置工作目录上下文变量
-        session.SetContextVariable("workspace_path", workspacePath);
+        // 2. 设置工作目录上下文变量（使用相对路径）
+        session.SetContextVariable("workspace_path", relativePath);
         var specContent = _workspaceManager.ReadSpecFile(userId, projectId);
         session.SetContextVariable("spec_content", specContent);
         var files = _workspaceManager.GetWorkspaceFiles(userId, projectId);

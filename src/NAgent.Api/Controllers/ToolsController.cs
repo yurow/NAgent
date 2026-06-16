@@ -46,8 +46,10 @@ public class ToolsController : ControllerBase
 
         // 1. 添加内置工具（从 ToolRegistry）
         var builtInTools = _toolRegistry.GetAllTools();
+        var builtInNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var tool in builtInTools)
         {
+            builtInNames.Add(tool.ToolName);
             dtos.Add(new ToolInfoDto(
                 tool.ToolName,
                 tool.Description,
@@ -58,10 +60,13 @@ public class ToolsController : ControllerBase
             ));
         }
 
-        // 2. 添加 YAML 配置工具（从 ToolDefinitionRepository）
+        // 2. 添加 YAML 配置工具（从 ToolDefinitionRepository，跳过与内置同名的）
         var yamlTools = await _toolDefinitionRepository.GetAllAsync(cancellationToken);
         foreach (var tool in yamlTools)
         {
+            if (builtInNames.Contains(tool.Name))
+                continue;
+
             dtos.Add(new ToolInfoDto(
                 tool.Name,
                 tool.Description,

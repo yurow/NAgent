@@ -1,0 +1,17 @@
+name: local_file_read
+description: 读取项目工作空间内的文件内容。参数：file_path(相对项目目录的文件路径), encoding(编码,默认utf-8)
+category: file
+security_level: Low
+parameters:
+  - name: file_path
+    description: 相对项目目录的文件路径
+    type: string
+    required: true
+  - name: encoding
+    description: 文件编码
+    type: string
+    required: false
+    default: "utf-8"
+execution:
+  type: local
+  timeout_seconds: 10

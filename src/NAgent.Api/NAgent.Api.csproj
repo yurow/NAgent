@@ -33,6 +33,8 @@
     <Content Update="wwwroot\css\login.css">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="tools\**\*.yaml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="skills\**\*.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

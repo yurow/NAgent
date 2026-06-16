@@ -14,7 +14,6 @@ using NAgent.AgentDomain.Services.Tools;
 using NAgent.AgentInfrastructure.Repositories;
 using NAgent.AgentInfrastructure.Services;
 using NAgent.AgentInfrastructure.Parsers;
-using NAgent.AgentInfrastructure.Tools;
 using SqlSugar;
 
 namespace NAgent.AgentInfrastructure;
@@ -25,12 +24,12 @@ namespace NAgent.AgentInfrastructure;
 public static class DependencyInjection
 {
     public static IServiceCollection AddAgentInfrastructure(
-        this IServiceCollection services, 
+        this IServiceCollection services,
         IConfiguration configuration)
     {
         // 注册 Agent Engine（默认使用 LangChain）
         var engineType = configuration.GetValue("Agent:EngineType", "LangChain");
-        
+
         services.AddScoped<IAgentEngine>(sp =>
         {
             var factory = sp.GetRequiredService<AgentEngineFactory>();
@@ -44,7 +43,7 @@ public static class DependencyInjection
         // ⭐ 注册 Agent 领域仓储（SQLite 持久化 + 内存缓存）
         services.AddSingleton<IAgentSessionRepository, InMemoryAgentSessionRepository>();
         services.AddSingleton<IAgentToolRepository, InMemoryAgentToolRepository>();
-        
+
         // ⭐ 注册 LLM 仓储（SQLite 持久化 + 内存缓存）
         services.AddScoped<ILlmProviderRepository, SqliteLlmProviderRepository>();
         services.AddScoped<ILlmModelRepository, SqliteLlmModelRepository>();
@@ -56,8 +55,8 @@ public static class DependencyInjection
         // ⭐ 注册记忆系统（项目级隔离）
         services.AddSingleton<IMemoryStorage>(sp =>
         {
-            var configuration = sp.GetRequiredService<IConfiguration>();
-            var workspacePath = configuration["Workspace:BasePath"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "NAgent", "workspace");
+            var config = sp.GetRequiredService<IConfiguration>();
+            var workspacePath = config["Workspace:BasePath"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "workspace");
             return new FileMemoryStorage(workspacePath);
         });
 
@@ -85,7 +84,7 @@ public static class DependencyInjection
         // ⭐ 注册 Skills 和 Tools 系统
         RegisterSkillsAndTools(services, configuration);
 
-        // ⭐ 注册内置工具系统
+        // ⭐ 注册内置工具系统（通过 YAML 配置 + YamlToolExecutor）
         RegisterBuiltInTools(services);
 
         return services;
@@ -123,29 +122,64 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// 注册内置工具（Web搜索、文件读取、文件写入）
+    /// 注册内置工具（Web搜索、文件读取、文件写入、文件列表）
+    /// 工具通过 YAML 配置 + YamlToolExecutor 执行
     /// </summary>
     private static void RegisterBuiltInTools(IServiceCollection services)
     {
-        // 注册工具注册表
+        // 注册工具注册表 - 从 YAML 文件加载工具定义并创建执行器
         services.AddSingleton<IToolRegistry>(sp =>
         {
             var registry = new ToolRegistry();
-
-            // 注册 Web 搜索工具
-            var webSearchLogger = sp.GetService<ILogger<WebSearchTool>>();
-            registry.Register(new WebSearchTool(logger: webSearchLogger));
-
-            // 注册本地文件读取工具
             var workspaceManager = sp.GetRequiredService<IWorkspaceManager>();
-            var fileReadLogger = sp.GetService<ILogger<LocalFileReadTool>>();
-            registry.Register(new LocalFileReadTool(workspaceManager, fileReadLogger));
+            var toolDefRepo = sp.GetRequiredService<IToolDefinitionRepository>();
 
-            // 注册本地文件写入工具
-            var fileWriteLogger = sp.GetService<ILogger<LocalFileWriteTool>>();
-            registry.Register(new LocalFileWriteTool(workspaceManager, fileWriteLogger));
+            // 1. 从 IToolDefinitionRepository 加载 YAML 配置工具
+            var yamlTools = toolDefRepo.GetAllAsync(CancellationToken.None).GetAwaiter().GetResult();
+            foreach (var toolDef in yamlTools.Where(t => t.IsEnabled))
+            {
+                try
+                {
+                    registry.RegisterFromDefinition(toolDef, workspaceManager);
+                }
+                catch (Exception ex)
+                {
+                    var logger = sp.GetService<ILogger<ToolRegistry>>();
+                    logger?.LogError(ex, "加载 YAML 工具 {ToolName} 失败", toolDef.Name);
+                }
+            }
+
+            // 2. 如果 YAML 中没有定义内置工具，则注册硬编码的内置工具作为后备
+            var builtInToolNames = new[] { "web_search", "local_file_read", "local_file_write", "list_workspace_files" };
+            foreach (var toolName in builtInToolNames)
+            {
+                if (!registry.HasTool(toolName))
+                {
+                    // 创建简化的内置工具（通过 local 执行类型映射到内置逻辑）
+                    var builtInDef = new NAgent.AgentDomain.Entities.ToolDefinition(
+                        toolName,
+                        GetBuiltInToolDescription(toolName),
+                        "built-in",
+                        $"name: {toolName}\ndescription: {GetBuiltInToolDescription(toolName)}\ncategory: built-in\nexecution:\n  type: local",
+                        $"built-in/{toolName}.yaml"
+                    );
+                    registry.RegisterFromDefinition(builtInDef, workspaceManager);
+                }
+            }
 
             return registry;
         });
+    }
+
+    private static string GetBuiltInToolDescription(string toolName)
+    {
+        return toolName.ToLowerInvariant() switch
+        {
+            "web_search" => "使用 DuckDuckGo 进行网络搜索，获取实时信息",
+            "local_file_read" => "读取项目工作空间内的文件内容",
+            "local_file_write" => "在项目工作空间内创建或修改文件",
+            "list_workspace_files" => "遍历并返回项目工作目录下所有文件名称和路径",
+            _ => "内置工具"
+        };
     }
 }

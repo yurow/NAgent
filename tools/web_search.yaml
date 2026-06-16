@@ -1,0 +1,17 @@
+name: web_search
+description: 使用 DuckDuckGo 进行网络搜索，获取实时信息。参数：query(搜索关键词), max_results(最大结果数,默认5)
+category: search
+security_level: Low
+parameters:
+  - name: query
+    description: 搜索关键词
+    type: string
+    required: true
+  - name: max_results
+    description: 最大结果数
+    type: integer
+    required: false
+    default: "5"
+execution:
+  type: local
+  timeout_seconds: 30
