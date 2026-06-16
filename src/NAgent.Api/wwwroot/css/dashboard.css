@@ -1202,6 +1202,80 @@ body {
     font-weight: 500;
 }
 
+/* 意图标签样式 */
+.intent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    color: #1a3a2a;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.intent-badge.analyzing {
+    background: linear-gradient(135deg, #f5af19 0%, #f12711 100%);
+    color: white;
+    animation: pulse 1.2s infinite;
+}
+
+.intent-badge.intent-code_generation,
+.intent-badge.intent-code_analysis,
+.intent-badge.intent-code_debug {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.intent-badge.intent-file_read,
+.intent-badge.intent-file_write,
+.intent-badge.intent-project_structure {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.intent-badge.intent-web_search {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: #0a2a3a;
+}
+
+.intent-badge.intent-documentation {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    color: #1a3a2a;
+}
+
+.intent-badge.intent-content_creation {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    color: #4a2a1a;
+}
+
+.intent-badge.intent-summarization {
+    background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
+    color: #3a2a4a;
+}
+
+.intent-badge.intent-translation {
+    background: linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%);
+    color: #1a2a4a;
+}
+
+.intent-badge.intent-general_chat {
+    background: #e2e8f0;
+    color: #4a5568;
+}
+
+.intent-badge.intent-unknown {
+    background: #e2e8f0;
+    color: #a0aec0;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 /* 记忆列表样式 */
 .memory-list {
     display: flex;

@@ -538,8 +538,9 @@ function setupAdminNavigation() {
 
 // ⭐ 初始化 AI Agent 聊天
 function initAgentChat() {
-    let sessionId = generateSessionId();
+    let sessionId = null;
     let currentProjectId = null;
+    let isInitialLoad = true; // 标记是否为首次自动加载
 
     // 加载可用模型列表
     loadAvailableModels();
@@ -551,11 +552,25 @@ function initAgentChat() {
     $('#projectSelect').on('change', function() {
         currentProjectId = $(this).val();
         if (currentProjectId) {
-            // 切换项目时清空聊天并生成新会话ID
+            // 切换项目时恢复或生成 sessionId
+            const storedSessionId = localStorage.getItem(`session_${currentProjectId}`);
+            if (storedSessionId) {
+                sessionId = storedSessionId;
+            } else {
+                sessionId = generateSessionId();
+                localStorage.setItem(`session_${currentProjectId}`, sessionId);
+            }
+
+            // 清空聊天并加载历史记录
             clearChat();
-            sessionId = generateSessionId();
-            // 添加项目切换提示
-            addSystemMessage(`已切换到项目：${$(this).find('option:selected').text()}`);
+
+            // 首次自动加载不添加切换提示，避免与历史记录重复
+            if (!isInitialLoad) {
+                addSystemMessage(`已切换到项目：${$(this).find('option:selected').text()}`);
+            }
+            isInitialLoad = false;
+
+            loadChatHistory(sessionId, currentProjectId);
         }
     });
 
@@ -578,6 +593,46 @@ function initAgentChat() {
     $('#clearChatBtn').on('click', function() {
         clearChat();
         sessionId = generateSessionId(); // 生成新的会话ID
+        if (currentProjectId) {
+            localStorage.setItem(`session_${currentProjectId}`, sessionId);
+            // 清空后端历史
+            const token = localStorage.getItem('jwt_token');
+            $.ajax({
+                url: `/api/agent/memory/${sessionId}?projectId=${currentProjectId}`,
+                type: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        }
+    });
+}
+
+// ⭐ 加载会话历史记录
+function loadChatHistory(sessionId, projectId) {
+    if (!sessionId || !projectId) return;
+
+    const token = localStorage.getItem('jwt_token');
+
+    $.ajax({
+        url: `/api/agent/history/${encodeURIComponent(sessionId)}?projectId=${projectId}&count=10`,
+        type: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        success: function(response) {
+            if (response.success && response.data && response.data.length > 0) {
+                // 渲染历史消息
+                response.data.forEach(function(msg) {
+                    if (msg.role === 'User') {
+                        addUserMessage(msg.content, msg.timestamp);
+                    } else if (msg.role === 'Assistant') {
+                        addBotMessage(msg.content, null, msg.timestamp);
+                    }
+                });
+            }
+        },
+        error: function() {
+            console.warn('加载历史记录失败');
+        }
     });
 }
 
@@ -609,10 +664,10 @@ function loadUserProjectsForChat() {
                     select.append(option);
                 });
 
-                // 如果有活跃项目，自动选择
+                // 如果有活跃项目，自动选择并触发 change 事件以加载历史记录
                 const activeProject = response.data.find(p => p.isActive);
                 if (activeProject) {
-                    select.val(activeProject.id);
+                    select.val(activeProject.id).trigger('change');
                 }
             }
         },
@@ -690,26 +745,102 @@ function sendMessage(sessionId, projectId, useStream = false) {
     // 清空输入框
     input.val('');
 
-    // 添加用户消息到聊天窗口
-    addUserMessage(message);
-
     // 禁用发送按钮
     $('#sendBtn').prop('disabled', true);
 
-    // 调用 API
-    const token = localStorage.getItem('jwt_token');
-    const requestData = {
-        sessionId: sessionId,
-        projectId: projectId,
-        userInput: message,
-        modelId: selectedModel || null
-    };
+    // 先调用意图分类（快速，异步）
+    classifyAndSend(sessionId, projectId, message, selectedModel, useStream);
+}
 
-    if (useStream) {
-        sendMessageStream(token, requestData);
-    } else {
-        sendMessageNonStream(token, requestData);
-    }
+// ⭐ 意图分类 + 发送消息
+function classifyAndSend(sessionId, projectId, message, selectedModel, useStream) {
+    const token = localStorage.getItem('jwt_token');
+
+    // 构建对话摘要（取当前页面中最近 2 轮消息）
+    const recentSummaries = buildRecentSummaries();
+
+    // 添加用户消息（先显示“分析中...”意图标签）
+    const userMsgElement = addUserMessageWithIntent(message, 'analyzing', '分析中...');
+
+    // 异步调用意图分类 API
+    $.ajax({
+        url: '/api/agent/classify-intent',
+        type: 'POST',
+        contentType: 'application/json',
+        headers: { 'Authorization': `Bearer ${token}` },
+        data: JSON.stringify({
+            userInput: message,
+            recentSummaries: recentSummaries,
+            modelId: selectedModel || null
+        }),
+        success: function(response) {
+            if (response.success && response.data) {
+                const intent = response.data;
+                // 更新意图标签
+                updateIntentBadge(userMsgElement, intent.intent, intent.description);
+
+                // 同步调用深度意图推测（后台异步，不阻塞发送）
+                inferIntentAsync(token, message, projectId, sessionId, selectedModel);
+            }
+        },
+        error: function() {
+            // 分类失败，移除“分析中”标签
+            updateIntentBadge(userMsgElement, 'unknown', '未知');
+        },
+        complete: function() {
+            // 无论分类是否成功，继续发送消息
+            const requestData = {
+                sessionId: sessionId,
+                projectId: projectId,
+                userInput: message,
+                modelId: selectedModel || null
+            };
+
+            if (useStream) {
+                sendMessageStream(token, requestData);
+            } else {
+                sendMessageNonStream(token, requestData);
+            }
+        }
+    });
+}
+
+// ⭐ 构建最近对话摘要（取当前页面中最近 2 轮）
+function buildRecentSummaries() {
+    const summaries = [];
+    const messages = $('#chatMessages .message').slice(-4); // 最近 4 条消息（2轮）
+    messages.each(function() {
+        const $msg = $(this);
+        const content = $msg.find('p').first().text().trim();
+        if (!content) return;
+        if ($msg.hasClass('user-message')) {
+            summaries.push({ role: 'User', summary: content.substring(0, 80) });
+        } else if ($msg.hasClass('bot-message')) {
+            summaries.push({ role: 'Assistant', summary: content.substring(0, 80) });
+        }
+    });
+    return summaries;
+}
+
+// ⭐ 异步意图推测（不阻塞主流程）
+function inferIntentAsync(token, message, projectId, sessionId, selectedModel) {
+    $.ajax({
+        url: '/api/agent/infer-intent',
+        type: 'POST',
+        contentType: 'application/json',
+        headers: { 'Authorization': `Bearer ${token}` },
+        data: JSON.stringify({
+            userInput: message,
+            projectId: projectId,
+            sessionId: sessionId,
+            modelId: selectedModel || null
+        }),
+        success: function(response) {
+            if (response.success && response.data) {
+                console.log('Intent inference:', response.data);
+            }
+        }
+    });
 }
 
 // 非流式发送消息
@@ -836,8 +967,8 @@ function sendMessageStream(token, requestData) {
 }
 
 // 添加用户消息
-function addUserMessage(message) {
-    const time = getCurrentTime();
+function addUserMessage(message, timestamp) {
+    const time = timestamp || getCurrentTime();
     const html = `
         <div class="message user-message">
             <div class="message-avatar">👤</div>
@@ -851,9 +982,41 @@ function addUserMessage(message) {
     scrollToBottom();
 }
 
-// 添加机器人消息（支持模型标注）
-function addBotMessage(message, modelName) {
+// ⭐ 添加带意图标签的用户消息
+function addUserMessageWithIntent(message, intentKey, intentLabel) {
     const time = getCurrentTime();
+    const badgeClass = intentKey === 'analyzing' ? 'intent-badge analyzing' : 'intent-badge';
+    const html = `
+        <div class="message user-message">
+            <div class="message-avatar">👤</div>
+            <div class="message-content">
+                <p>${escapeHtml(message)}</p>
+                <div class="message-footer">
+                    <span class="message-time">${time}</span>
+                    <span class="${badgeClass}" title="意图分类">🎯 ${escapeHtml(intentLabel)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+    $('#chatMessages').append(html);
+    scrollToBottom();
+    return $('#chatMessages .user-message').last();
+}
+
+// ⭐ 更新意图标签
+function updateIntentBadge($element, intentKey, intentLabel) {
+    if (!$element || !$element.length) return;
+    const badge = $element.find('.intent-badge');
+    if (badge.length) {
+        badge.removeClass('analyzing').addClass(`intent-${intentKey}`);
+        badge.html(`🎯 ${escapeHtml(intentLabel)}`);
+        badge.attr('title', `意图: ${intentKey}`);
+    }
+}
+
+// 添加机器人消息（支持模型标注）
+function addBotMessage(message, modelName, timestamp) {
+    const time = timestamp || getCurrentTime();
     const modelBadge = modelName ? `<span class="model-badge" title="使用模型">🧠 ${escapeHtml(modelName)}</span>` : '';
     const html = `
         <div class="message bot-message">

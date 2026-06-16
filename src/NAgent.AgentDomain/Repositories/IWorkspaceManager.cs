@@ -84,4 +84,29 @@ public interface IWorkspaceManager
     /// 记录 LLM 调用到记忆文件（以日期结尾的 JSON 文件）
     /// </summary>
     void RecordLlmCall(Guid userId, Guid projectId, string callType, string modelId, string prompt, string response, long durationMs, string? errorMessage = null);
+
+    /// <summary>
+    /// 保存对话消息到持久化存储（JSON 文件）
+    /// </summary>
+    void SaveChatHistory(Guid userId, Guid projectId, string sessionKey, List<ChatMessageDto> messages);
+
+    /// <summary>
+    /// 读取对话历史记录（返回最近的 N 条）
+    /// </summary>
+    List<ChatMessageDto> LoadChatHistory(Guid userId, Guid projectId, string sessionKey, int count = 10);
+
+    /// <summary>
+    /// 获取项目下所有会话的 sessionKey 列表
+    /// </summary>
+    List<string> GetProjectSessionKeys(Guid userId, Guid projectId);
+}
+
+/// <summary>
+/// 聊天消息 DTO（用于持久化存储）
+/// </summary>
+public class ChatMessageDto
+{
+    public string Role { get; set; } = "";
+    public string Content { get; set; } = "";
+    public string Timestamp { get; set; } = "";
 }

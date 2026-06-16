@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using Microsoft.Extensions.Hosting;
 using NAgent.Application.Interfaces;
 using NAgent.Domain.Entities;
@@ -89,7 +90,8 @@ public class InitializationService : IInitializationService
         
         var jsonContent = System.Text.Json.JsonSerializer.Serialize(initInfo, new System.Text.Json.JsonSerializerOptions 
         { 
-            WriteIndented = true 
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         });
         
         await File.WriteAllTextAsync(initFlagPath, jsonContent, Encoding.UTF8, cancellationToken);

@@ -10,6 +10,7 @@ using NAgent.AgentInfrastructure.Sandbox;
 using NAgent.AgentDomain.Repositories;
 using NAgent.AgentDomain.Services;
 using NAgent.AgentDomain.Services.Memory;
+using NAgent.AgentDomain.Services.Skills;
 using NAgent.AgentDomain.Services.Tools;
 using NAgent.AgentInfrastructure.Repositories;
 using NAgent.AgentInfrastructure.Services;
@@ -84,8 +85,14 @@ public static class DependencyInjection
         // ⭐ 注册 Skills 和 Tools 系统
         RegisterSkillsAndTools(services, configuration);
 
+        // ⭐ 注册 Skill 执行器（编排 Tool 调用）
+        services.AddScoped<ISkillExecutor, SkillExecutor>();
+
         // ⭐ 注册内置工具系统（通过 YAML 配置 + YamlToolExecutor）
         RegisterBuiltInTools(services);
+
+        // ⭐ 注册意图分类与推测服务
+        services.AddScoped<IIntentService, IntentServiceImpl>();
 
         return services;
     }

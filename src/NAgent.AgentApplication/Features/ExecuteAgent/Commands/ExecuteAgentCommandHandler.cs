@@ -267,6 +267,9 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         // 8. 将用户问题和 AI 回复追加到 spec.md
         _workspaceManager.AppendQuestionToSpec(userId, projectId, userInput, executionResult.Output);
 
+        // 9. 保存对话历史
+        SaveConversationToHistory(userId, projectId, request.SessionId, userInput, executionResult.Output ?? "");
+
         // 9. 获取模型名称
         string? modelName = executionResult.ModelName;
         if (string.IsNullOrEmpty(modelName) && !string.IsNullOrEmpty(request.ModelId))
@@ -294,5 +297,39 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         }
 
         return session;
+    }
+
+    /// <summary>
+    /// 保存对话到历史记录
+    /// </summary>
+    private void SaveConversationToHistory(Guid userId, Guid projectId, string sessionKey, string userInput, string assistantReply)
+    {
+        try
+        {
+            var existingMessages = _workspaceManager.LoadChatHistory(userId, projectId, sessionKey, 1000);
+
+            existingMessages.Add(new ChatMessageDto
+            {
+                Role = "User",
+                Content = userInput,
+                Timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+            existingMessages.Add(new ChatMessageDto
+            {
+                Role = "Assistant",
+                Content = assistantReply,
+                Timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+
+            var trimmed = existingMessages.Count > 100
+                ? existingMessages.TakeLast(100).ToList()
+                : existingMessages;
+
+            _workspaceManager.SaveChatHistory(userId, projectId, sessionKey, trimmed);
+        }
+        catch
+        {
+            // 保存失败不影响主流程
+        }
     }
 }

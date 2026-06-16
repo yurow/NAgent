@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace NAgent.AgentDomain.Services.Memory;
@@ -43,7 +44,8 @@ public class FileMemoryStorage : IMemoryStorage
             var json = JsonSerializer.Serialize(context, new JsonSerializerOptions
             {
                 WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             });
 
             await File.WriteAllTextAsync(filePath, json, cancellationToken);

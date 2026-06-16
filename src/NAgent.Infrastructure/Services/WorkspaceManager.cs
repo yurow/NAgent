@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using NAgent.AgentDomain.Repositories;
 
 namespace NAgent.Infrastructure.Services;
@@ -113,7 +114,8 @@ public class WorkspaceManager : IWorkspaceManager
 
         var json = System.Text.Json.JsonSerializer.Serialize(config, new System.Text.Json.JsonSerializerOptions
         {
-            WriteIndented = true
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         });
 
         File.WriteAllText(configPath, json);
@@ -311,7 +313,10 @@ public class WorkspaceManager : IWorkspaceManager
                 user_id = userId
             };
 
-            var json = System.Text.Json.JsonSerializer.Serialize(record);
+            var json = System.Text.Json.JsonSerializer.Serialize(record, new System.Text.Json.JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
             var line = json + "\n";
 
             File.AppendAllText(filePath, line);
@@ -320,5 +325,97 @@ public class WorkspaceManager : IWorkspaceManager
         {
             // 记录失败不影响主流程
         }
+    }
+
+    /// <summary>
+    /// 保存对话消息到持久化存储（JSON 文件）
+    /// 文件路径: workspace/{userId}/{projectId}/sessions/{sessionKey}.json
+    /// </summary>
+    public void SaveChatHistory(Guid userId, Guid projectId, string sessionKey, List<ChatMessageDto> messages)
+    {
+        try
+        {
+            var sessionDir = GetSessionDirectory(userId, projectId);
+            var filePath = Path.Combine(sessionDir, $"{SanitizeFileName(sessionKey)}.json");
+
+            var json = System.Text.Json.JsonSerializer.Serialize(messages, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+
+            File.WriteAllText(filePath, json, System.Text.Encoding.UTF8);
+        }
+        catch
+        {
+            // 保存失败不影响主流程
+        }
+    }
+
+    /// <summary>
+    /// 读取对话历史记录（返回最近的 N 条）
+    /// </summary>
+    public List<ChatMessageDto> LoadChatHistory(Guid userId, Guid projectId, string sessionKey, int count = 10)
+    {
+        try
+        {
+            var sessionDir = GetSessionDirectory(userId, projectId);
+            var filePath = Path.Combine(sessionDir, $"{SanitizeFileName(sessionKey)}.json");
+
+            if (!File.Exists(filePath))
+                return new List<ChatMessageDto>();
+
+            var json = File.ReadAllText(filePath, System.Text.Encoding.UTF8);
+            var allMessages = System.Text.Json.JsonSerializer.Deserialize<List<ChatMessageDto>>(json)
+                ?? new List<ChatMessageDto>();
+
+            return allMessages.TakeLast(count).ToList();
+        }
+        catch
+        {
+            return new List<ChatMessageDto>();
+        }
+    }
+
+    /// <summary>
+    /// 获取项目下所有会话的 sessionKey 列表
+    /// </summary>
+    public List<string> GetProjectSessionKeys(Guid userId, Guid projectId)
+    {
+        try
+        {
+            var sessionDir = GetSessionDirectory(userId, projectId);
+            if (!Directory.Exists(sessionDir))
+                return new List<string>();
+
+            return Directory.GetFiles(sessionDir, "*.json")
+                .Select(f => Path.GetFileNameWithoutExtension(f))
+                .ToList();
+        }
+        catch
+        {
+            return new List<string>();
+        }
+    }
+
+    /// <summary>
+    /// 获取会话目录路径
+    /// </summary>
+    private string GetSessionDirectory(Guid userId, Guid projectId)
+    {
+        var projectPath = GetProjectWorkspacePath(userId, projectId);
+        var sessionDir = Path.Combine(projectPath, "sessions");
+        Directory.CreateDirectory(sessionDir);
+        return sessionDir;
+    }
+
+    /// <summary>
+    /// 清理文件名中的非法字符
+    /// </summary>
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var sanitized = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        return sanitized;
     }
 }

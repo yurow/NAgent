@@ -433,6 +433,11 @@ public class YamlToolExecutor : IToolExecutor
 
     private string? FindWorkspaceBasePath()
     {
+        // 优先使用 IWorkspaceManager 提供的基础路径
+        var managerPath = _workspaceManager.GetWorkspaceBasePath();
+        if (!string.IsNullOrEmpty(managerPath) && Directory.Exists(managerPath))
+            return managerPath;
+
         var possiblePaths = new[]
         {
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "workspace"),
