@@ -87,10 +87,21 @@ public class YamlToolExecutor : IToolExecutor
 
         // 使用 DuckDuckGo HTML 搜索
         var encodedQuery = System.Web.HttpUtility.UrlEncode(query);
-        var url = $"https://html.duckduckgo.com/html/?q={encodedQuery}";
+        var url = $"https://api.duckduckgo.com/?q={encodedQuery}&format=json&skip_disambig=1";
 
-        using var client = new HttpClient();
-        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        using var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
+        };
+        using var client = new HttpClient(handler);
+        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+        client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        client.DefaultRequestHeaders.Add("Referer", "https://duckduckgo.com/");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "document");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "navigate");
+        client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-site");
+        client.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
         client.Timeout = TimeSpan.FromSeconds(30);
 
         var response = await client.GetStringAsync(url, cancellationToken);

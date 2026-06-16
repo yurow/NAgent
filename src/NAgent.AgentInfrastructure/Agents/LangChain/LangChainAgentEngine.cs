@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
+using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Skills;
 using NAgent.AgentDomain.Services.Tools;
 
@@ -16,6 +17,7 @@ public class LangChainAgentEngine : IAgentEngine
     private readonly ILlmClient _llmClient;
     private readonly IToolRegistry _toolRegistry;
     private readonly ISkillExecutor _skillExecutor;
+    private readonly IMemorySystem _memorySystem;
     private readonly ILogger<LangChainAgentEngine>? _logger;
 
     /// <summary>
@@ -27,11 +29,13 @@ public class LangChainAgentEngine : IAgentEngine
         ILlmClient llmClient,
         IToolRegistry toolRegistry,
         ISkillExecutor skillExecutor,
+        IMemorySystem memorySystem,
         ILogger<LangChainAgentEngine>? logger = null)
     {
         _llmClient = llmClient ?? throw new ArgumentNullException(nameof(llmClient));
         _toolRegistry = toolRegistry ?? throw new ArgumentNullException(nameof(toolRegistry));
         _skillExecutor = skillExecutor ?? throw new ArgumentNullException(nameof(skillExecutor));
+        _memorySystem = memorySystem ?? throw new ArgumentNullException(nameof(memorySystem));
         _logger = logger;
     }
 
@@ -345,19 +349,39 @@ public class LangChainAgentEngine : IAgentEngine
     {
         var context = BuildContext(session, userInput);
         var availableSkills = _skillExecutor.GetAvailableSkillsDescription();
-        var jsonExample1 = "{\"skill\": \"skill名称\", \"parameters\": {\"参数名\": \"参数值\"}, \"reasoning\": \"推理过程\"}";
-        var jsonExample2 = "{\"skill\": \"\", \"parameters\": {}, \"reasoning\": \"直接回复的原因\"}";
+        var jsonExample1 = "{\"skill\": \"file_reader\", \"parameters\": {\"file_path\": \"init.md\"}, \"reasoning\": \"用户想读取init.md文件\"}";
+        var jsonExample2 = "{\"skill\": \"\", \"parameters\": {}, \"reasoning\": \"用户只是闲聊，不需要调用Skill\"}";
+        var example3 = "例如用户说'帮我写个hello.py'，你应该选择 file_writer Skill，参数 file_path='hello.py', content='print(\\\"hello\\\")'";
+        var example4 = "例如用户说'记录一下小说名字为时光涟漪'，你应该选择 file_writer Skill，参数 file_path='notes.txt', content='小说名字: 时光涟漪'";
 
-        return $@"{context}
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine(context);
+        sb.AppendLine();
+        sb.AppendLine("【系统指令】");
+        sb.AppendLine("你是 NAgent 的意图解析器。你的任务是根据用户的自然语言输入，自动选择合适的 Skill 并提取参数。");
+        sb.AppendLine();
+        sb.AppendLine("【重要规则】");
+        sb.AppendLine("1. 用户用自然语言描述需求时，你必须自动推断参数，不要让用户手动输入命令");
+        sb.AppendLine("2. 例如用户说'帮我读取init文件'，你应该选择 file_reader Skill，参数 file_path='init.md'");
+        sb.AppendLine("3. 例如用户说'搜索一下GPT-4的最新消息'，你应该选择 web_researcher Skill，参数 query='GPT-4最新消息'");
+        sb.AppendLine("4. " + example3);
+        sb.AppendLine("5. " + example4);
+        sb.AppendLine("6. 如果用户提到的文件名不完整（如'init'），根据工作目录文件列表自动补全（如'init.md'）");
+        sb.AppendLine("7. 如果用户意图不明确或只是闲聊，返回空 skill");
+        sb.AppendLine("8. 如果缺少必填参数（如文件路径），自动推断合理的默认值（如用 'notes.txt'、'record.txt' 等通用名称）");
+        sb.AppendLine("9. 用户说'记录一下'、'记下来'、'保存'等，表示要写入文件，必须选择 file_writer Skill");
+        sb.AppendLine();
+        sb.AppendLine("可用 Skills:");
+        sb.AppendLine(availableSkills);
+        sb.AppendLine();
+        sb.AppendLine("【输出格式】");
+        sb.AppendLine("请严格返回以下 JSON 格式（不要包含其他文字）:");
+        sb.AppendLine(jsonExample1);
+        sb.AppendLine();
+        sb.AppendLine("如果不需要调用 Skill，返回:");
+        sb.AppendLine(jsonExample2);
 
-可用 Skills:
-{availableSkills}
-
-请分析用户意图，选择最合适的 Skill。返回以下 JSON 格式（不要包含其他文字）:
-{jsonExample1}
-
-如果不需要调用 Skill，返回:
-{jsonExample2}";
+        return sb.ToString();
     }
 
     /// <summary>
@@ -373,9 +397,60 @@ public class LangChainAgentEngine : IAgentEngine
         var workspaceFiles = session.GetContextVariable("workspace_files") ?? "";
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("历史对话:");
-        sb.AppendLine(history);
-        sb.AppendLine();
+
+        // 会话内历史对话
+        if (!string.IsNullOrWhiteSpace(history))
+        {
+            sb.AppendLine("历史对话:");
+            sb.AppendLine(history);
+            sb.AppendLine();
+        }
+
+        // 从记忆系统加载持久化的历史上下文
+        try
+        {
+            var sessionId = Guid.TryParse(session.SessionKey, out var sid) ? sid : session.Id;
+            var shortTermMemories = _memorySystem.GetShortTermMemoryAsync(session.ProjectId, sessionId, 10).GetAwaiter().GetResult();
+            if (shortTermMemories.Count > 0)
+            {
+                sb.AppendLine("【近期对话记忆】");
+                foreach (var mem in shortTermMemories)
+                {
+                    var roleLabel = mem.Role.Equals("user", StringComparison.OrdinalIgnoreCase) ? "用户" : "AI";
+                    sb.AppendLine($"{roleLabel}: {mem.Content}");
+                }
+                sb.AppendLine();
+            }
+
+            var longTermMemories = _memorySystem.GetLongTermMemoryAsync(session.ProjectId, sessionId, 5).GetAwaiter().GetResult();
+            if (longTermMemories.Count > 0)
+            {
+                sb.AppendLine("【长期记忆摘要】");
+                foreach (var mem in longTermMemories)
+                {
+                    var roleLabel = mem.Role.Equals("user", StringComparison.OrdinalIgnoreCase) ? "用户" : "AI";
+                    var contentPreview = mem.Content.Length > 200 ? mem.Content[..200] + "..." : mem.Content;
+                    sb.AppendLine($"{roleLabel}: {contentPreview}");
+                }
+                sb.AppendLine();
+            }
+
+            var projectMemorySummaries = _memorySystem.GetProjectMemorySummaryAsync(session.ProjectId, 10).GetAwaiter().GetResult();
+            if (projectMemorySummaries.Count > 0)
+            {
+                sb.AppendLine("【项目知识记忆】");
+                foreach (var pms in projectMemorySummaries)
+                {
+                    sb.AppendLine($"- [{pms.Category}] {pms.Summary}");
+                }
+                sb.AppendLine();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "加载记忆上下文失败，跳过");
+        }
+
         sb.AppendLine($"当前工作目录: {workspacePath}");
         sb.AppendLine();
 

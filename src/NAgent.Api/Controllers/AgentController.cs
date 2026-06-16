@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NAgent.AgentApplication.Features.ExecuteAgent.Commands;
 using NAgent.AgentApplication.Interfaces;
+using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
+using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Tools;
 using NAgent.Shared.Responses;
 
@@ -23,14 +25,20 @@ public class AgentController : ControllerBase
     private readonly IWorkspaceManager _workspaceManager;
     private readonly IIntentService _intentService;
     private readonly IToolRegistry _toolRegistry;
+    private readonly IAgentEngine _agentEngine;
+    private readonly IAgentSessionRepository _sessionRepository;
+    private readonly IMemorySystem _memorySystem;
 
-    public AgentController(IMediator mediator, ILlmClient llmClient, IWorkspaceManager workspaceManager, IIntentService intentService, IToolRegistry toolRegistry)
+    public AgentController(IMediator mediator, ILlmClient llmClient, IWorkspaceManager workspaceManager, IIntentService intentService, IToolRegistry toolRegistry, IAgentEngine agentEngine, IAgentSessionRepository sessionRepository, IMemorySystem memorySystem)
     {
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _llmClient = llmClient ?? throw new ArgumentNullException(nameof(llmClient));
         _workspaceManager = workspaceManager ?? throw new ArgumentNullException(nameof(workspaceManager));
         _intentService = intentService ?? throw new ArgumentNullException(nameof(intentService));
         _toolRegistry = toolRegistry ?? throw new ArgumentNullException(nameof(toolRegistry));
+        _agentEngine = agentEngine ?? throw new ArgumentNullException(nameof(agentEngine));
+        _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
+        _memorySystem = memorySystem ?? throw new ArgumentNullException(nameof(memorySystem));
     }
 
     /// <summary>
@@ -151,32 +159,22 @@ public class AgentController : ControllerBase
             return;
         }
 
-        // 3. 已初始化：构建带工作目录上下文的 prompt
+        // 3. 已初始化：使用 AgentEngine 执行（支持 Skill 选择和 Tool 调用）
+        var session = await GetOrCreateSessionAsync(request.SessionId, projectId, cancellationToken);
+        if (session == null)
+        {
+            Response.StatusCode = 500;
+            await Response.WriteAsJsonAsync(ApiResponse<string>.FailureResponse("无法创建会话"), cancellationToken);
+            return;
+        }
+        session.SetContextVariable("workspace_path", relativePath);
         var specContent = _workspaceManager.ReadSpecFile(userId, projectId);
+        session.SetContextVariable("spec_content", specContent);
         var files = _workspaceManager.GetWorkspaceFiles(userId, projectId);
-        var absolutePath = _workspaceManager.EnsureProjectWorkspace(userId, projectId);
+        session.SetContextVariable("workspace_files", string.Join("\n", files));
 
-        // ⭐ 检测并预执行工具调用（如文件读取）
-        var toolResults = await PreExecuteToolsAsync(request.UserInput, projectId, cancellationToken);
-        var toolResultsStr = toolResults.Count > 0
-            ? "\n\n" + string.Join("\n\n", toolResults.Select(tr => $"[工具执行结果: {tr.ToolName}]\n{tr.Output}"))
-            : "";
-
-        var contextPrompt = $@"你是 NAgent AI 助手。你在一个项目的工作目录中协助用户。
-
-当前工作目录(相对路径): {relativePath}
-当前工作目录(绝对路径): {absolutePath}
-
-工作目录文件列表:
-{string.Join("\n", files)}
-{toolResultsStr}
-
-项目规范文档 (spec.md):
-{specContent}
-
-用户问题: {request.UserInput}
-
-请基于工作目录上下文回答用户问题。如果用户要求读取文件，请根据已执行的工具结果直接展示文件内容。如果用户要求总结文档，请基于文件内容进行总结。如果用户要求创建或修改文件，请说明将如何使用文件工具。";
+        // 添加用户消息到会话
+        session.AddUserMessage(request.UserInput);
 
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
@@ -185,25 +183,47 @@ public class AgentController : ControllerBase
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var fullResponse = new System.Text.StringBuilder();
 
-            await foreach (var chunk in _llmClient.GenerateStreamAsync(
-                contextPrompt,
+            // 使用 AgentEngine 执行（会自动选择 Skill 并调用 Tool）
+            var executionResult = await _agentEngine.ExecuteAsync(
+                session,
+                request.UserInput,
                 request.ModelId,
-                cancellationToken: cancellationToken))
-            {
-                fullResponse.Append(chunk);
-                await Response.WriteAsync($"data: {chunk}\n\n", cancellationToken);
-                await Response.Body.FlushAsync(cancellationToken);
-            }
+                cancellationToken);
 
             sw.Stop();
 
+            // 流式输出结果
+            var output = executionResult.Output ?? "";
+            var chunks = SplitIntoChunks(output, 50);
+            foreach (var chunk in chunks)
+            {
+                await Response.WriteAsync($"data: {chunk}\n\n", cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+                await Task.Delay(15, cancellationToken); // 模拟打字效果
+            }
+
             // 记录 LLM 调用
-            _workspaceManager.RecordLlmCall(userId, projectId, "chat_stream", request.ModelId ?? "default", contextPrompt, fullResponse.ToString(), sw.ElapsedMilliseconds);
+            _workspaceManager.RecordLlmCall(userId, projectId, "chat_stream", request.ModelId ?? "default", request.UserInput, output, sw.ElapsedMilliseconds);
+
+            // 添加助手消息到会话并保存
+            session.AddAssistantMessage(output);
+            await _sessionRepository.UpdateAsync(session, cancellationToken);
 
             // ⭐ 保存对话历史
-            SaveConversationToHistory(userId, projectId, request.SessionId, request.UserInput, fullResponse.ToString());
+            SaveConversationToHistory(userId, projectId, request.SessionId, request.UserInput, output);
+
+            // ⭐ 写入记忆系统
+            try
+            {
+                var sessionId = Guid.TryParse(request.SessionId, out var sid) ? sid : Guid.NewGuid();
+                await _memorySystem.AddMemoryAsync(projectId, sessionId, "user", request.UserInput, new Dictionary<string, object> { ["projectId"] = projectId.ToString() }, cancellationToken);
+                await _memorySystem.AddMemoryAsync(projectId, sessionId, "assistant", output, new Dictionary<string, object> { ["projectId"] = projectId.ToString(), ["model"] = request.ModelId ?? "default" }, cancellationToken);
+            }
+            catch
+            {
+                // 记忆写入失败不影响主流程
+            }
 
             await Response.WriteAsync("data: [DONE]\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
@@ -211,10 +231,24 @@ public class AgentController : ControllerBase
         catch (Exception ex)
         {
             // 记录错误
-            _workspaceManager.RecordLlmCall(userId, projectId, "chat_stream_error", request.ModelId ?? "default", contextPrompt, "", 0, ex.Message);
+            _workspaceManager.RecordLlmCall(userId, projectId, "chat_stream_error", request.ModelId ?? "default", request.UserInput, "", 0, ex.Message);
             await Response.WriteAsync($"data: ERROR: {ex.Message}\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// 获取或创建会话
+    /// </summary>
+    private async Task<AgentSession?> GetOrCreateSessionAsync(string sessionId, Guid projectId, CancellationToken cancellationToken)
+    {
+        var session = await _sessionRepository.GetBySessionKeyAsync(sessionId, cancellationToken);
+        if (session == null)
+        {
+            session = new AgentSession(sessionId, projectId);
+            await _sessionRepository.AddAsync(session, cancellationToken);
+        }
+        return session;
     }
 
     /// <summary>

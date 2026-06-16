@@ -289,6 +289,7 @@ public class WorkspaceManager : IWorkspaceManager
     /// <summary>
     /// 记录 LLM 调用到记忆文件（以日期结尾的 JSONL 文件）
     /// 每天一个文件，每行一条记录（JSONL 格式便于追加）
+    /// 调试模式（DEBUG）下不截断 prompt 和 response，方便排查问题
     /// </summary>
     public void RecordLlmCall(Guid userId, Guid projectId, string callType, string modelId, string prompt, string response, long durationMs, string? errorMessage = null)
     {
@@ -298,15 +299,25 @@ public class WorkspaceManager : IWorkspaceManager
             var dateStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
             var filePath = Path.Combine(memoryDir, $"llm-calls-{dateStr}.jsonl");
 
+#if DEBUG
+            // 调试模式：完整记录，不截断
+            var promptPreview = prompt;
+            var responsePreview = response;
+#else
+            // 生产模式：截断避免文件过大
+            var promptPreview = prompt != null && prompt.Length > 500 ? prompt[..500] + "...[截断]" : prompt;
+            var responsePreview = response != null && response.Length > 1000 ? response[..1000] + "...[截断]" : response;
+#endif
+
             var record = new
             {
                 timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss:sss") + " UTC",
                 call_type = callType,
                 model_id = modelId,
                 prompt_length = prompt?.Length ?? 0,
-                prompt_preview = prompt != null && prompt.Length > 500 ? prompt[..500] + "...[截断]" : prompt,
+                prompt_preview = promptPreview,
                 response_length = response?.Length ?? 0,
-                response_preview = response != null && response.Length > 1000 ? response[..1000] + "...[截断]" : response,
+                response_preview = responsePreview,
                 duration_ms = durationMs,
                 error = errorMessage,
                 project_id = projectId,

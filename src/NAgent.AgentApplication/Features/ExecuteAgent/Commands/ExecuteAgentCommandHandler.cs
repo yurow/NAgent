@@ -2,6 +2,7 @@ using MediatR;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
+using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Tools;
 
 namespace NAgent.AgentApplication.Features.ExecuteAgent.Commands;
@@ -22,6 +23,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
     private readonly IToolRegistry _toolRegistry;
     private readonly ISkillRepository _skillRepository;
     private readonly IToolDefinitionRepository _toolDefinitionRepository;
+    private readonly IMemorySystem _memorySystem;
 
     public ExecuteAgentCommandHandler(
         IAgentEngine agentEngine,
@@ -34,7 +36,8 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         ILlmClient llmClient,
         IToolRegistry toolRegistry,
         ISkillRepository skillRepository,
-        IToolDefinitionRepository toolDefinitionRepository)
+        IToolDefinitionRepository toolDefinitionRepository,
+        IMemorySystem memorySystem)
     {
         _agentEngine = agentEngine ?? throw new ArgumentNullException(nameof(agentEngine));
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
@@ -47,6 +50,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         _toolRegistry = toolRegistry ?? throw new ArgumentNullException(nameof(toolRegistry));
         _skillRepository = skillRepository ?? throw new ArgumentNullException(nameof(skillRepository));
         _toolDefinitionRepository = toolDefinitionRepository ?? throw new ArgumentNullException(nameof(toolDefinitionRepository));
+        _memorySystem = memorySystem ?? throw new ArgumentNullException(nameof(memorySystem));
     }
 
     public async Task<ExecuteAgentResult> Handle(ExecuteAgentCommand request, CancellationToken cancellationToken)
@@ -270,7 +274,19 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         // 9. 保存对话历史
         SaveConversationToHistory(userId, projectId, request.SessionId, userInput, executionResult.Output ?? "");
 
-        // 9. 获取模型名称
+        // 10. 写入记忆系统（短期记忆 + 自动溢出到长期记忆）
+        try
+        {
+            var sessionId = Guid.TryParse(request.SessionId, out var sid) ? sid : Guid.NewGuid();
+            await _memorySystem.AddMemoryAsync(projectId, sessionId, "user", userInput, new Dictionary<string, object> { ["projectId"] = projectId.ToString() }, cancellationToken);
+            await _memorySystem.AddMemoryAsync(projectId, sessionId, "assistant", executionResult.Output ?? "", new Dictionary<string, object> { ["projectId"] = projectId.ToString(), ["model"] = request.ModelId ?? "default" }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // 记忆写入失败不影响主流程
+        }
+
+        // 11. 获取模型名称
         string? modelName = executionResult.ModelName;
         if (string.IsNullOrEmpty(modelName) && !string.IsNullOrEmpty(request.ModelId))
         {

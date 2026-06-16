@@ -31,8 +31,50 @@ public class SkillExecutor : ISkillExecutor
             {
                 lines.Add($"  包含工具: {string.Join(", ", skill.ToolNames)}");
             }
+            // 提取参数说明
+            var paramDescriptions = ExtractParameterDescriptions(skill);
+            if (paramDescriptions.Count > 0)
+            {
+                lines.Add($"  参数:");
+                foreach (var pd in paramDescriptions)
+                {
+                    lines.Add($"    - {pd.Key}: {pd.Value}");
+                }
+            }
         }
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// 从 Skill Markdown 内容中提取参数说明
+    /// </summary>
+    private Dictionary<string, string> ExtractParameterDescriptions(Skill skill)
+    {
+        var result = new Dictionary<string, string>();
+        var content = skill.MarkdownContent;
+
+        // 匹配 ## 参数 部分下的列表项
+        var paramSectionMatch = System.Text.RegularExpressions.Regex.Match(
+            content,
+            @"##\s*参数\s*\n(.*?)(?=\n##|\z)",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        if (paramSectionMatch.Success)
+        {
+            var paramSection = paramSectionMatch.Groups[1].Value;
+            var paramMatches = System.Text.RegularExpressions.Regex.Matches(
+                paramSection,
+                @"-\s*`([^`]+)`:\s*(.+?)(?=\n-\s*`|\z)");
+
+            foreach (System.Text.RegularExpressions.Match match in paramMatches)
+            {
+                var paramName = match.Groups[1].Value.Trim();
+                var paramDesc = match.Groups[2].Value.Trim().Replace("\n", " ");
+                result[paramName] = paramDesc;
+            }
+        }
+
+        return result;
     }
 
     public async Task<SkillExecutionResult> ExecuteAsync(
