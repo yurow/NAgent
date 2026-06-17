@@ -11,7 +11,7 @@ public interface IKnowledgeGraphService
     /// 从文本中提取实体和关系，构建知识图谱
     /// </summary>
     Task ExtractAndStoreAsync(
-        Guid projectId,
+        string projectId,
         string text,
         string source,
         string? sourceId = null,
@@ -21,7 +21,7 @@ public interface IKnowledgeGraphService
     /// 根据查询关键词检索相关知识图谱信息
     /// </summary>
     Task<KnowledgeGraphQueryResult> QueryAsync(
-        Guid projectId,
+        string projectId,
         string query,
         int limit = 10,
         CancellationToken cancellationToken = default);
@@ -30,14 +30,14 @@ public interface IKnowledgeGraphService
     /// 获取项目的知识图谱摘要
     /// </summary>
     Task<string> GetProjectSummaryAsync(
-        Guid projectId,
+        string projectId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 删除指定来源的知识图谱数据
     /// </summary>
     Task DeleteBySourceAsync(
-        Guid projectId,
+        string projectId,
         string source,
         string? sourceId = null,
         CancellationToken cancellationToken = default);

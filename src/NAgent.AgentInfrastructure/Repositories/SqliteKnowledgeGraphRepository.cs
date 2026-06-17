@@ -16,20 +16,20 @@ public class SqliteKnowledgeGraphRepository : IKnowledgeGraphRepository
         _db = db ?? throw new ArgumentNullException(nameof(db));
     }
 
-    public async Task<KnowledgeGraphNode?> GetNodeByNameAsync(Guid projectId, string name, CancellationToken cancellationToken = default)
+    public async Task<KnowledgeGraphNode?> GetNodeByNameAsync(string projectId, string name, CancellationToken cancellationToken = default)
     {
         return await _db.Queryable<KnowledgeGraphNode>()
             .FirstAsync(n => n.ProjectId == projectId && n.Name == name, cancellationToken);
     }
 
-    public async Task<List<KnowledgeGraphNode>> GetNodesByProjectAsync(Guid projectId, CancellationToken cancellationToken = default)
+    public async Task<List<KnowledgeGraphNode>> GetNodesByProjectAsync(string projectId, CancellationToken cancellationToken = default)
     {
         return await _db.Queryable<KnowledgeGraphNode>()
             .Where(n => n.ProjectId == projectId)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<KnowledgeGraphNode>> SearchNodesAsync(Guid projectId, string keyword, int limit = 20, CancellationToken cancellationToken = default)
+    public async Task<List<KnowledgeGraphNode>> SearchNodesAsync(string projectId, string keyword, int limit = 20, CancellationToken cancellationToken = default)
     {
         return await _db.Queryable<KnowledgeGraphNode>()
             .Where(n => n.ProjectId == projectId && (n.Name.Contains(keyword) || n.EntityType.Contains(keyword)))
@@ -47,13 +47,13 @@ public class SqliteKnowledgeGraphRepository : IKnowledgeGraphRepository
         await _db.Updateable(node).ExecuteCommandAsync(cancellationToken);
     }
 
-    public async Task<KnowledgeGraphEdge?> GetEdgeAsync(Guid sourceNodeId, Guid targetNodeId, string relationType, CancellationToken cancellationToken = default)
+    public async Task<KnowledgeGraphEdge?> GetEdgeAsync(string sourceNodeId, string targetNodeId, string relationType, CancellationToken cancellationToken = default)
     {
         return await _db.Queryable<KnowledgeGraphEdge>()
             .FirstAsync(e => e.SourceNodeId == sourceNodeId && e.TargetNodeId == targetNodeId && e.RelationType == relationType, cancellationToken);
     }
 
-    public async Task<List<KnowledgeGraphEdge>> GetEdgesByNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    public async Task<List<KnowledgeGraphEdge>> GetEdgesByNodeAsync(string nodeId, CancellationToken cancellationToken = default)
     {
         return await _db.Queryable<KnowledgeGraphEdge>()
             .Where(e => e.SourceNodeId == nodeId || e.TargetNodeId == nodeId)
@@ -65,7 +65,7 @@ public class SqliteKnowledgeGraphRepository : IKnowledgeGraphRepository
         await _db.Insertable(edge).ExecuteCommandAsync(cancellationToken);
     }
 
-    public async Task<KnowledgeGraphQueryResult> QueryRelatedAsync(Guid projectId, List<string> keywords, int depth = 1, CancellationToken cancellationToken = default)
+    public async Task<KnowledgeGraphQueryResult> QueryRelatedAsync(string projectId, List<string> keywords, int depth = 1, CancellationToken cancellationToken = default)
     {
         var result = new KnowledgeGraphQueryResult();
         if (keywords.Count == 0) return result;
@@ -111,7 +111,7 @@ public class SqliteKnowledgeGraphRepository : IKnowledgeGraphRepository
         return result;
     }
 
-    public async Task<List<KnowledgeGraphNode>> GetNodesBySourceAsync(Guid projectId, string source, string? sourceId = null, CancellationToken cancellationToken = default)
+    public async Task<List<KnowledgeGraphNode>> GetNodesBySourceAsync(string projectId, string source, string? sourceId = null, CancellationToken cancellationToken = default)
     {
         var query = _db.Queryable<KnowledgeGraphNode>()
             .Where(n => n.ProjectId == projectId && n.Source == source);
@@ -124,7 +124,7 @@ public class SqliteKnowledgeGraphRepository : IKnowledgeGraphRepository
         return await query.ToListAsync(cancellationToken);
     }
 
-    public async Task DeleteBySourceAsync(Guid projectId, string source, string? sourceId = null, CancellationToken cancellationToken = default)
+    public async Task DeleteBySourceAsync(string projectId, string source, string? sourceId = null, CancellationToken cancellationToken = default)
     {
         // 1. 找到要删除的节点
         var query = _db.Queryable<KnowledgeGraphNode>()

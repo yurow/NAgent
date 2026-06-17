@@ -569,7 +569,7 @@ public class LangChainAgentEngine : IAgentEngine
         // 查询知识图谱，辅助LLM判断
         try
         {
-            var kgResult = _knowledgeGraph.QueryAsync(session.ProjectId, currentInput, limit: 10).GetAwaiter().GetResult();
+            var kgResult = _knowledgeGraph.QueryAsync(session.ProjectId.ToString(), currentInput, limit: 10).GetAwaiter().GetResult();
             if (kgResult.HasResults)
             {
                 sb.AppendLine("【项目知识图谱】");

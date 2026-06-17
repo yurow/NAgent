@@ -22,7 +22,7 @@ public class KnowledgeGraphService : IKnowledgeGraphService
     /// 从文本中提取实体和关系，构建知识图谱
     /// </summary>
     public async Task ExtractAndStoreAsync(
-        Guid projectId,
+        string projectId,
         string text,
         string source,
         string? sourceId = null,
@@ -43,7 +43,7 @@ public class KnowledgeGraphService : IKnowledgeGraphService
             var relations = _nlpExtractor.ExtractRelations(chunk, entities);
 
             // 4. 存储实体（去重，已存在则增加出现次数）
-            var entityNameToId = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+            var entityNameToId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entity in entities)
             {
                 var existingNode = await _repository.GetNodeByNameAsync(projectId, entity.Name, cancellationToken);
@@ -99,7 +99,7 @@ public class KnowledgeGraphService : IKnowledgeGraphService
     /// 根据查询关键词检索相关知识图谱信息
     /// </summary>
     public async Task<KnowledgeGraphQueryResult> QueryAsync(
-        Guid projectId,
+        string projectId,
         string query,
         int limit = 10,
         CancellationToken cancellationToken = default)
@@ -133,7 +133,7 @@ public class KnowledgeGraphService : IKnowledgeGraphService
     /// 获取项目的知识图谱摘要
     /// </summary>
     public async Task<string> GetProjectSummaryAsync(
-        Guid projectId,
+        string projectId,
         CancellationToken cancellationToken = default)
     {
         var nodes = await _repository.GetNodesByProjectAsync(projectId, cancellationToken);
@@ -164,7 +164,7 @@ public class KnowledgeGraphService : IKnowledgeGraphService
     /// 删除指定来源的知识图谱数据
     /// </summary>
     public async Task DeleteBySourceAsync(
-        Guid projectId,
+        string projectId,
         string source,
         string? sourceId = null,
         CancellationToken cancellationToken = default)

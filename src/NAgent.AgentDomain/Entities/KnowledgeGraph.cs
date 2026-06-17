@@ -10,39 +10,43 @@ public class KnowledgeGraphNode
     /// <summary>
     /// 节点ID
     /// </summary>
-    [SugarColumn(IsPrimaryKey = true)]
-    public Guid Id { get; set; } = Guid.NewGuid();
+    [SugarColumn(IsPrimaryKey = true, Length = 36)]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
 
     /// <summary>
     /// 所属项目ID
     /// </summary>
-    public Guid ProjectId { get; set; }
+    [SugarColumn(Length = 36)]
+    public string ProjectId { get; set; } = string.Empty;
 
     /// <summary>
     /// 实体名称
     /// </summary>
+    [SugarColumn(Length = 200)]
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
     /// 实体类型（如：人物、地点、组织、概念、技术、文件等）
     /// </summary>
+    [SugarColumn(Length = 50)]
     public string EntityType { get; set; } = string.Empty;
 
     /// <summary>
     /// 实体描述/摘要
     /// </summary>
-    [SugarColumn(IsNullable = true)]
+    [SugarColumn(IsNullable = true, Length = 2000)]
     public string? Description { get; set; }
 
     /// <summary>
     /// 来源（如：用户上传文件、对话历史、搜索结果、手动输入）
     /// </summary>
+    [SugarColumn(Length = 50)]
     public string Source { get; set; } = string.Empty;
 
     /// <summary>
     /// 来源标识（如文件路径、会话ID、搜索关键词）
     /// </summary>
-    [SugarColumn(IsNullable = true)]
+    [SugarColumn(IsNullable = true, Length = 500)]
     public string? SourceId { get; set; }
 
     /// <summary>
@@ -69,38 +73,43 @@ public class KnowledgeGraphEdge
     /// <summary>
     /// 边ID
     /// </summary>
-    [SugarColumn(IsPrimaryKey = true)]
-    public Guid Id { get; set; } = Guid.NewGuid();
+    [SugarColumn(IsPrimaryKey = true, Length = 36)]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
 
     /// <summary>
     /// 所属项目ID
     /// </summary>
-    public Guid ProjectId { get; set; }
+    [SugarColumn(Length = 36)]
+    public string ProjectId { get; set; } = string.Empty;
 
     /// <summary>
     /// 源节点ID
     /// </summary>
-    public Guid SourceNodeId { get; set; }
+    [SugarColumn(Length = 36)]
+    public string SourceNodeId { get; set; } = string.Empty;
 
     /// <summary>
     /// 目标节点ID
     /// </summary>
-    public Guid TargetNodeId { get; set; }
+    [SugarColumn(Length = 36)]
+    public string TargetNodeId { get; set; } = string.Empty;
 
     /// <summary>
     /// 关系类型（如：包含、属于、使用、创建、相关、引用等）
     /// </summary>
+    [SugarColumn(Length = 50)]
     public string RelationType { get; set; } = string.Empty;
 
     /// <summary>
     /// 关系描述
     /// </summary>
-    [SugarColumn(IsNullable = true)]
+    [SugarColumn(IsNullable = true, Length = 500)]
     public string? Description { get; set; }
 
     /// <summary>
     /// 来源
     /// </summary>
+    [SugarColumn(Length = 50)]
     public string Source { get; set; } = string.Empty;
 
     /// <summary>

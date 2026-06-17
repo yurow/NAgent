@@ -301,7 +301,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         {
             var conversationText = $"用户: {userInput}\nAI: {executionResult.Output ?? ""}";
             await _knowledgeGraph.ExtractAndStoreAsync(
-                projectId,
+                projectId.ToString(),
                 conversationText,
                 source: "conversation",
                 sourceId: request.SessionId,

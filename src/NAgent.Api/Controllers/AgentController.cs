@@ -473,7 +473,7 @@ public class AgentController : ControllerBase
             if (!string.IsNullOrWhiteSpace(content) && content.Length < 500_000) // 限制500KB文本
             {
                 await _knowledgeGraph.ExtractAndStoreAsync(
-                    projectIdGuid,
+                    projectIdGuid.ToString(),
                     content,
                     source: "uploaded_file",
                     sourceId: file.FileName,
@@ -513,7 +513,7 @@ public class AgentController : ControllerBase
         if (string.IsNullOrWhiteSpace(projectId) || !Guid.TryParse(projectId, out var projectIdGuid))
             return BadRequest(ApiResponse.FailureResponse("缺少有效的 projectId"));
 
-        var summary = await _knowledgeGraph.GetProjectSummaryAsync(projectIdGuid, cancellationToken);
+        var summary = await _knowledgeGraph.GetProjectSummaryAsync(projectIdGuid.ToString(), cancellationToken);
         return Ok(ApiResponse<string>.SuccessResponse(summary));
     }
 
