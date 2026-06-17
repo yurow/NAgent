@@ -325,8 +325,8 @@ function viewProjectMemory(projectId, projectName) {
 
         var html = '';
 
-        // 知识图谱部分
-        if (viewKgData.success && viewKgData.data) {
+        // 知识图谱部分（只有真正有数据时才显示）
+        if (viewKgData.success && viewKgData.data && viewKgData.data.indexOf('暂无知识图谱数据') === -1) {
             html += '<div class="kg-section">';
             html += '<h3>📊 知识图谱</h3>';
             html += '<pre class="kg-content">' + escapeHtml(viewKgData.data) + '</pre>';

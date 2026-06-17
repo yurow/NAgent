@@ -465,6 +465,8 @@ public class AgentController : ControllerBase
         }
 
         // 读取文件内容并提取知识图谱
+        var kgExtracted = false;
+        var kgError = "";
         try
         {
             var content = await System.IO.File.ReadAllTextAsync(filePath, cancellationToken);
@@ -476,18 +478,29 @@ public class AgentController : ControllerBase
                     source: "uploaded_file",
                     sourceId: file.FileName,
                     cancellationToken);
+                kgExtracted = true;
+            }
+            else if (content.Length >= 500_000)
+            {
+                kgError = "文件过大（超过500KB），跳过知识图谱提取";
             }
         }
         catch (Exception ex)
         {
+            kgError = ex.Message;
             _logger?.LogWarning(ex, "提取文件知识图谱失败: {FileName}", file.FileName);
         }
+
+        var message = kgExtracted
+            ? $"文件 {file.FileName} 上传成功，知识图谱提取完成"
+            : (string.IsNullOrEmpty(kgError) ? $"文件 {file.FileName} 上传成功（文件内容为空，未提取知识图谱）" : $"文件 {file.FileName} 上传成功，但知识图谱提取失败：{kgError}");
 
         return Ok(ApiResponse<object>.SuccessResponse(new
         {
             fileName = file.FileName,
             fileSize = file.Length,
-            message = $"文件 {file.FileName} 上传成功，已提取知识图谱"
+            kgExtracted = kgExtracted,
+            message = message
         }));
     }
 
