@@ -417,8 +417,8 @@ public class BaiduWebSearchTool
             using var handler = new HttpClientHandler
             {
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-                AllowAutoRedirect = false, // 不自动重定向，手动获取 Location header
-                MaxAutomaticRedirections = 0
+                AllowAutoRedirect = false,
+                MaxAutomaticRedirections = 1 // 最小值为1，配合 AllowAutoRedirect=false 实际不会重定向
             };
             using var client = new HttpClient(handler);
             client.Timeout = TimeSpan.FromSeconds(10);
