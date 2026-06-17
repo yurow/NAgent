@@ -334,8 +334,10 @@ public class BaiduWebSearchTool
         if (string.IsNullOrWhiteSpace(url))
             return null;
 
-        // 跳过百度自有链接（百科除外）
-        if (url.Contains("baidu.com") && !url.Contains("baike.baidu.com"))
+        // 跳过百度自有页面（搜索结果页、知道、贴吧等），但保留跳转链接和百科
+        if (url.Contains("baidu.com") &&
+            !url.Contains("baike.baidu.com") &&
+            !url.Contains("baidu.com/link?url="))
             return null;
 
         try
