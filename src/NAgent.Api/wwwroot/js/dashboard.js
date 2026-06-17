@@ -860,7 +860,22 @@ function sendMessageNonStream(token, requestData) {
             hideLoading();
 
             if (response.success) {
-                addBotMessage(response.data, response.modelName);
+                // ⭐ 检查调试模式并显示调试事件
+                const debugModeOn = $('#debugToggle').prop('checked');
+                const selectedModelName = $('#modelSelect option:selected').text() || '默认模型';
+                const botMessageId = 'bot-msg-' + Date.now();
+                
+                if (debugModeOn && response.debugEvents && response.debugEvents.length > 0) {
+                    // 使用带调试面板的容器
+                    addBotMessageContainer(botMessageId, selectedModelName);
+                    updateBotMessage(botMessageId, response.data);
+                    // 填充调试事件
+                    response.debugEvents.forEach(function(evt) {
+                        addDebugEvent(botMessageId, evt);
+                    });
+                } else {
+                    addBotMessage(response.data, response.modelName);
+                }
             } else {
                 addErrorMessage(response.message || '请求失败');
             }
@@ -917,6 +932,8 @@ function sendMessageStream(token, requestData) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullText = '';
+        let currentEventType = null; // 跟踪当前 SSE 事件类型
+        let sseBuffer = ''; // ⭐ SSE 缓冲区，处理跨 chunk 的消息
         
         function readStream() {
             return reader.read().then(({ done, value }) => {
@@ -927,29 +944,65 @@ function sendMessageStream(token, requestData) {
                 }
                 
                 const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n\n');
+                sseBuffer += chunk;
                 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.substring(6);
+                // ⭐ 按 \n\n 分割完整的 SSE 消息块
+                const parts = sseBuffer.split('\n\n');
+                // 最后一部分可能不完整，留在缓冲区
+                sseBuffer = parts.pop() || '';
+                
+                for (const part of parts) {
+                    if (!part.trim()) continue;
+                    
+                    // ⭐ 拆分每个 SSE 消息块的内部行（event: + data:）
+                    const innerLines = part.split('\n');
+                    let blockEventType = currentEventType;
+                    let blockData = null;
+                    
+                    for (const innerLine of innerLines) {
+                        if (innerLine.startsWith('event: ')) {
+                            blockEventType = innerLine.substring(7).trim();
+                        } else if (innerLine.startsWith('data: ')) {
+                            blockData = innerLine.substring(6);
+                        }
+                    }
+                    
+                    // 有 data 才处理
+                    if (blockData !== null) {
+                        // ⭐ 处理调试事件
+                        if (blockEventType === 'debug') {
+                            try {
+                                const debugEvent = JSON.parse(blockData);
+                                addDebugEvent(botMessageId, debugEvent);
+                            } catch (e) {
+                                console.warn('Debug event 解析失败:', e);
+                            }
+                            currentEventType = null;
+                            continue;
+                        }
                         
-                        if (data === '[DONE]') {
-                            // 启用发送按钮
+                        if (blockData === '[DONE]') {
                             $('#sendBtn').prop('disabled', false);
                             return;
                         }
                         
-                        if (data.startsWith('ERROR:')) {
-                            const errorMsg = data.substring(7);
+                        if (blockData.startsWith('ERROR:')) {
+                            const errorMsg = blockData.substring(7);
                             updateBotMessage(botMessageId, fullText);
                             addErrorMessage(errorMsg);
                             $('#sendBtn').prop('disabled', false);
                             return;
                         }
                         
-                        fullText += data;
+                        fullText += blockData;
                         updateBotMessage(botMessageId, fullText);
                         scrollToBottom();
+                    }
+                    
+                    // 重置事件类型
+                    currentEventType = blockEventType;
+                    if (blockData !== null) {
+                        currentEventType = null;
                     }
                 }
                 
@@ -1038,10 +1091,26 @@ function addBotMessage(message, modelName, timestamp) {
 function addBotMessageContainer(messageId, modelName) {
     const time = getCurrentTime();
     const modelBadge = modelName ? `<span class="model-badge" title="使用模型">🧠 ${escapeHtml(modelName)}</span>` : '';
+    // ⭐ 检查调试模式开关
+    const debugModeOn = $('#debugToggle').prop('checked');
+    const debugPanelStyle = debugModeOn ? '' : 'display:none;';
+    const debugToggleIcon = debugModeOn ? '▼' : '▶';
+    const debugBodyStyle = debugModeOn ? '' : 'display:none;';
+    const debugWaitingText = debugModeOn ? '<div class="debug-waiting">⏳ 等待 AI 思考...</div>' : '';
     const html = `
         <div class="message bot-message" id="${messageId}">
             <div class="message-avatar">🤖</div>
             <div class="message-content">
+                <div class="debug-panel ${debugModeOn ? 'debug-panel-visible' : ''}" id="debug-${messageId}" style="${debugPanelStyle}">
+                    <div class="debug-panel-header" onclick="toggleDebugPanel('${messageId}')">
+                        <span class="debug-toggle-icon">${debugToggleIcon}</span>
+                        <span class="debug-title">🧠 思考过程</span>
+                        <span class="debug-event-count" id="debug-count-${messageId}">0</span>
+                    </div>
+                    <div class="debug-panel-body" id="debug-body-${messageId}" style="${debugBodyStyle}">
+                        ${debugWaitingText}
+                    </div>
+                </div>
                 <p class="streaming-text"></p>
                 <div class="message-footer">
                     <span class="message-time">${time}</span>
@@ -1051,6 +1120,75 @@ function addBotMessageContainer(messageId, modelName) {
         </div>
     `;
     $('#chatMessages').append(html);
+    scrollToBottom();
+}
+
+// 切换调试面板展开/收起
+function toggleDebugPanel(messageId) {
+    const $body = $(`#debug-body-${messageId}`);
+    const $icon = $(`#debug-${messageId} .debug-toggle-icon`);
+    $body.slideToggle(200);
+    $icon.text($body.is(':visible') ? '▼' : '▶');
+}
+
+// 添加调试事件到面板
+function addDebugEvent(messageId, event) {
+    const $panel = $(`#debug-${messageId}`);
+    const $body = $(`#debug-body-${messageId}`);
+    const $count = $(`#debug-count-${messageId}`);
+    if ($panel.length === 0) return;
+
+    // 显示面板（如果隐藏）
+    $panel.show().addClass('debug-panel-visible');
+
+    // 移除 "等待思考" 占位符
+    $body.find('.debug-waiting').remove();
+
+    // ⭐ 自动展开面板 body
+    $body.show();
+    $(`#debug-${messageId} .debug-toggle-icon`).text('▼');
+
+    // 更新计数
+    const currentCount = parseInt($count.text()) || 0;
+    $count.text(currentCount + 1);
+
+    // 事件类型图标映射
+    const icons = {
+        'cot': '💭', 'skill': '🎯', 'tool': '🔧',
+        'iteration': '🔄', 'llm': '🤖', 'decision': '⚖️',
+        'info': 'ℹ️', 'warning': '⚠️', 'error': '❌'
+    };
+    const icon = icons[event.type] || icons[event.status] || '📝';
+
+    // 状态颜色
+    const statusClass = `debug-status-${event.status || 'info'}`;
+
+    // 耗时显示
+    const duration = event.durationMs > 0 ? `<span class="debug-duration">${event.durationMs}ms</span>` : '';
+
+    // 内容截断与展开
+    const contentHtml = event.content
+        ? `<div class="debug-content">${escapeHtml(event.content)}</div>`
+        : '';
+
+    const html = `
+        <div class="debug-event ${statusClass}">
+            <div class="debug-event-header">
+                <span class="debug-icon">${icon}</span>
+                <span class="debug-event-title">${escapeHtml(event.title)}</span>
+                ${duration}
+                <span class="debug-event-time">${event.timestamp}</span>
+            </div>
+            ${contentHtml}
+        </div>
+    `;
+    $body.append(html);
+
+    // ⭐ 自动滚动调试面板到底部
+    const bodyEl = $body[0];
+    if (bodyEl) {
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
     scrollToBottom();
 }
 

@@ -140,6 +140,7 @@ public static class DependencyInjection
             var registry = new ToolRegistry();
             var workspaceManager = sp.GetRequiredService<IWorkspaceManager>();
             var toolDefRepo = sp.GetRequiredService<IToolDefinitionRepository>();
+            var logger = sp.GetService<ILogger<ToolRegistry>>();
 
             // 1. 从 IToolDefinitionRepository 加载 YAML 配置工具
             var yamlTools = toolDefRepo.GetAllAsync(CancellationToken.None).GetAwaiter().GetResult();
@@ -147,11 +148,10 @@ public static class DependencyInjection
             {
                 try
                 {
-                    registry.RegisterFromDefinition(toolDef, workspaceManager);
+                    registry.RegisterFromDefinition(toolDef, workspaceManager, logger);
                 }
                 catch (Exception ex)
                 {
-                    var logger = sp.GetService<ILogger<ToolRegistry>>();
                     logger?.LogError(ex, "加载 YAML 工具 {ToolName} 失败", toolDef.Name);
                 }
             }
@@ -170,7 +170,7 @@ public static class DependencyInjection
                         $"name: {toolName}\ndescription: {GetBuiltInToolDescription(toolName)}\ncategory: built-in\nexecution:\n  type: local",
                         $"built-in/{toolName}.yaml"
                     );
-                    registry.RegisterFromDefinition(builtInDef, workspaceManager);
+                    registry.RegisterFromDefinition(builtInDef, workspaceManager, logger);
                 }
             }
 
@@ -182,7 +182,7 @@ public static class DependencyInjection
     {
         return toolName.ToLowerInvariant() switch
         {
-            "web_search" => "使用 DuckDuckGo 进行网络搜索，获取实时信息",
+            "web_search" => "使用多搜索引擎（百度+Bing）进行网络搜索，获取实时信息",
             "local_file_read" => "读取项目工作空间内的文件内容",
             "local_file_write" => "在项目工作空间内创建或修改文件",
             "list_workspace_files" => "遍历并返回项目工作目录下所有文件名称和路径",

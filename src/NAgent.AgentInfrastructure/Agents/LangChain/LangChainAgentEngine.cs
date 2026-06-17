@@ -43,19 +43,27 @@ public class LangChainAgentEngine : IAgentEngine
         AgentSession session,
         string userInput,
         string? modelId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<DebugEvent>? onDebugEvent = null)
     {
+        _debug = onDebugEvent; // 存储回调，供内部方法使用
         try
         {
+            Emit("info", "执行开始", $"用户输入: {userInput}");
+
             // 1. 解析意图 - 模型选择 Skill
             var intent = await ParseSkillIntentAsync(session, userInput, cancellationToken);
 
             // 2. 如果不需要执行 Skill，直接生成回复
             if (!intent.NeedsExecution)
             {
+                Emit("cot", "意图解析：直接回复", intent.Reasoning ?? "无 Skill 匹配，直接生成回复");
                 var directResponse = await GenerateDirectResponseAsync(session, userInput, modelId, cancellationToken);
+                Emit("llm", "生成回复", $"回复长度: {directResponse.Length} 字符");
                 return new AgentExecutionResult(true, directResponse);
             }
+
+            Emit("skill", $"选中 Skill: {intent.SkillName}", intent.Reasoning ?? "");
 
             // 3. 迭代执行 Skill（带防死循环机制）
             var iterationResult = await ExecuteSkillWithIterationAsync(
@@ -66,8 +74,25 @@ public class LangChainAgentEngine : IAgentEngine
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Agent 执行失败");
+            Emit("error", "执行失败", ex.Message);
             return new AgentExecutionResult(false, $"执行失败: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 发出调试事件
+    /// </summary>
+    private Action<DebugEvent>? _debug;
+    private void Emit(string type, string title, string content = "", long durationMs = 0, string status = "info")
+    {
+        _debug?.Invoke(new DebugEvent
+        {
+            Type = type,
+            Title = title,
+            Content = content,
+            DurationMs = durationMs,
+            Status = status
+        });
     }
 
     /// <summary>
@@ -92,15 +117,35 @@ public class LangChainAgentEngine : IAgentEngine
                 "Skill 迭代执行 [{Iteration}/{MaxIterations}]: {SkillName}",
                 iteration, MaxIterations, currentIntent.SkillName);
 
+            Emit("iteration", $"迭代 {iteration}/{MaxIterations}", $"执行 Skill: {currentIntent.SkillName}");
+
             // 执行当前 Skill
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var skillResult = await _skillExecutor.ExecuteAsync(
                 currentIntent.SkillName,
                 currentIntent.Parameters,
                 session.ProjectId,
                 cancellationToken);
+            sw.Stop();
+
+            // 记录每个工具步骤的执行详情
+            foreach (var step in skillResult.Steps)
+            {
+                var paramStr = currentIntent.Parameters.Count > 0
+                    ? string.Join(", ", currentIntent.Parameters.Select(p => $"{p.Key}={p.Value}"))
+                    : "无参数";
+                Emit(
+                    step.Success ? "tool" : "tool",
+                    $"工具: {step.ToolName}",
+                    $"入参: {paramStr}\n结果: {(step.ToolOutput?.Length > 500 ? step.ToolOutput[..500] + "..." : step.ToolOutput)}",
+                    sw.ElapsedMilliseconds,
+                    step.Success ? "success" : "error"
+                );
+            }
 
             if (!skillResult.Success)
             {
+                Emit("error", $"Skill '{currentIntent.SkillName}' 执行失败", skillResult.ErrorMessage ?? "");
                 return new AgentExecutionResult(
                     false,
                     $"Skill '{currentIntent.SkillName}' 执行失败: {skillResult.ErrorMessage}",
@@ -113,6 +158,7 @@ public class LangChainAgentEngine : IAgentEngine
             if (iteration >= MaxIterations)
             {
                 _logger?.LogWarning("达到最大迭代次数 {MaxIterations}，强制退出", MaxIterations);
+                Emit("warning", "达到最大迭代次数", $"已迭代 {MaxIterations} 次，强制返回结果");
                 var finalResponse = await GenerateResponseWithSkillResultAsync(
                     session, userInput, allSteps, "已达到最大处理次数，返回当前结果", modelId, cancellationToken);
                 return new AgentExecutionResult(true, finalResponse, currentIntent.SkillName);
@@ -122,6 +168,7 @@ public class LangChainAgentEngine : IAgentEngine
             if (!skillResult.NeedsFurtherProcessing)
             {
                 _logger?.LogInformation("Skill 标记不需要进一步处理，退出迭代");
+                Emit("decision", "Skill 完成，无需进一步处理", skillResult.Output?.Length > 200 ? skillResult.Output[..200] + "..." : skillResult.Output ?? "");
                 var response = await GenerateResponseWithSkillResultAsync(
                     session, userInput, allSteps, skillResult.Output, modelId, cancellationToken);
                 return new AgentExecutionResult(true, response, currentIntent.SkillName);
@@ -131,6 +178,7 @@ public class LangChainAgentEngine : IAgentEngine
             if (previousResults.Count > 0 && IsResultSimilar(skillResult.Output, previousResults.Last()))
             {
                 _logger?.LogWarning("检测到结果重复，退出迭代防止死循环");
+                Emit("warning", "检测到死循环", "结果与上次迭代高度相似，自动退出");
                 var stableResponse = await GenerateResponseWithSkillResultAsync(
                     session, userInput, allSteps, skillResult.Output, modelId, cancellationToken);
                 return new AgentExecutionResult(true, stableResponse, currentIntent.SkillName);
@@ -154,6 +202,7 @@ public class LangChainAgentEngine : IAgentEngine
             if (!continueDecision.ShouldContinue)
             {
                 _logger?.LogInformation("模型判定不需要继续处理，退出迭代");
+                Emit("cot", "模型决策：不再继续", continueDecision.Reasoning);
                 var finalResponse = await GenerateResponseWithSkillResultAsync(
                     session, userInput, allSteps, skillResult.Output, modelId, cancellationToken);
                 return new AgentExecutionResult(true, finalResponse, currentIntent.SkillName);
@@ -162,6 +211,7 @@ public class LangChainAgentEngine : IAgentEngine
             // 6. 准备下一次迭代
             if (!string.IsNullOrEmpty(continueDecision.NextSkillName))
             {
+                Emit("cot", "模型决策：继续调用", $"下一步 Skill: {continueDecision.NextSkillName}\n理由: {continueDecision.Reasoning}");
                 currentIntent = new SkillSelectionResult(
                     continueDecision.NextSkillName,
                     continueDecision.NextParameters,
@@ -212,6 +262,7 @@ public class LangChainAgentEngine : IAgentEngine
 
                 var skillName = root.GetProperty("skill").GetString() ?? "";
                 var reasoning = root.GetProperty("reasoning").GetString() ?? "";
+                Emit("cot", "思维链：意图推理", reasoning);
 
                 var parameters = new Dictionary<string, object>();
                 if (root.TryGetProperty("parameters", out var paramsElement))
@@ -228,6 +279,7 @@ public class LangChainAgentEngine : IAgentEngine
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Skill 意图解析失败，将直接回复");
+            Emit("warning", "意图解析失败", ex.Message);
         }
 
         return new SkillSelectionResult("", new Dictionary<string, object>(), "直接回复用户");
@@ -273,6 +325,7 @@ public class LangChainAgentEngine : IAgentEngine
 
                 var shouldContinue = root.GetProperty("should_continue").GetBoolean();
                 var reasoning = root.GetProperty("reasoning").GetString() ?? "";
+                Emit("cot", "思维链：继续决策", reasoning);
 
                 if (shouldContinue)
                 {

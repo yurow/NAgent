@@ -242,11 +242,17 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
 
         // 4. 执行 Agent
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        
+        // ⭐ 收集调试事件（非流式路径）
+        var debugEvents = new List<DebugEvent>();
+        Action<DebugEvent> onDebugEvent = (evt) => debugEvents.Add(evt);
+        
         var executionResult = await _agentEngine.ExecuteAsync(
             session,
             userInput,
             request.ModelId,
-            cancellationToken);
+            cancellationToken,
+            onDebugEvent);
         sw.Stop();
 
         // 记录 LLM 调用
@@ -294,12 +300,20 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
             modelName = model?.DisplayName ?? request.ModelId;
         }
 
-        return new ExecuteAgentResult(
+        var result = new ExecuteAgentResult(
             executionResult.Success,
             executionResult.Output,
             null,
             modelName,
             executionResult.Metadata);
+        
+        // ⭐ 附带的调试事件
+        if (debugEvents.Count > 0)
+        {
+            result.DebugEvents = debugEvents;
+        }
+        
+        return result;
     }
 
     private async Task<AgentSession> GetOrCreateSessionAsync(string sessionKey, Guid projectId, CancellationToken cancellationToken)

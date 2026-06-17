@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -75,7 +76,14 @@ public class AgentController : ControllerBase
 
         if (result.Success)
         {
-            return Ok(ApiResponse<string>.SuccessResponse(result.Output));
+            return Ok(new
+            {
+                success = true,
+                data = result.Output,
+                modelName = result.ModelName,
+                message = "操作成功",
+                debugEvents = result.DebugEvents
+            });
         }
         else
         {
@@ -184,12 +192,33 @@ public class AgentController : ControllerBase
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
+            // ⭐ 调试事件回调：实时将 CoT/工具执行等事件通过 SSE 发送
+            var debugEvents = new List<DebugEvent>();
+            var debugJsonOpts = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
+            Action<DebugEvent> onDebugEvent = async (evt) =>
+            {
+                debugEvents.Add(evt);
+                var json = JsonSerializer.Serialize(evt, debugJsonOpts);
+                try
+                {
+                    await Response.WriteAsync($"event: debug\ndata: {json}\n\n", cancellationToken);
+                    await Response.Body.FlushAsync(cancellationToken);
+                }
+                catch { /* 连接已关闭时忽略 */ }
+            };
+
             // 使用 AgentEngine 执行（会自动选择 Skill 并调用 Tool）
             var executionResult = await _agentEngine.ExecuteAsync(
                 session,
                 request.UserInput,
                 request.ModelId,
-                cancellationToken);
+                cancellationToken,
+                onDebugEvent);
 
             sw.Stop();
 

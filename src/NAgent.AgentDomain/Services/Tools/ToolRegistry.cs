@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
 
@@ -51,22 +52,22 @@ public class ToolRegistry : IToolRegistry
     /// <summary>
     /// 从 YAML ToolDefinition 加载工具
     /// </summary>
-    public void RegisterFromDefinition(ToolDefinition definition, IWorkspaceManager workspaceManager)
+    public void RegisterFromDefinition(ToolDefinition definition, IWorkspaceManager workspaceManager, ILogger? logger = null)
     {
-        var executor = new YamlToolExecutor(definition, workspaceManager);
+        var executor = new YamlToolExecutor(definition, workspaceManager, logger);
         Register(executor);
     }
 
     /// <summary>
     /// 批量从 YAML ToolDefinition 加载工具
     /// </summary>
-    public void RegisterFromDefinitions(IEnumerable<ToolDefinition> definitions, IWorkspaceManager workspaceManager)
+    public void RegisterFromDefinitions(IEnumerable<ToolDefinition> definitions, IWorkspaceManager workspaceManager, ILogger? logger = null)
     {
         foreach (var definition in definitions)
         {
             if (definition.IsEnabled)
             {
-                RegisterFromDefinition(definition, workspaceManager);
+                RegisterFromDefinition(definition, workspaceManager, logger);
             }
         }
     }

@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
 
@@ -16,17 +18,20 @@ public class YamlToolExecutor : IToolExecutor
     private readonly ToolDefinition _toolDefinition;
     private readonly IWorkspaceManager _workspaceManager;
     private readonly HttpClient _httpClient;
+    private readonly ILogger _logger;
 
     public string ToolName => _toolDefinition.Name;
     public string Description => _toolDefinition.Description;
 
     public YamlToolExecutor(
         ToolDefinition toolDefinition,
-        IWorkspaceManager workspaceManager)
+        IWorkspaceManager workspaceManager,
+        ILogger? logger = null)
     {
         _toolDefinition = toolDefinition ?? throw new ArgumentNullException(nameof(toolDefinition));
         _workspaceManager = workspaceManager ?? throw new ArgumentNullException(nameof(workspaceManager));
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(toolDefinition.ExecutionConfig.TimeoutSeconds) };
+        _logger = logger ?? NullLogger.Instance;
     }
 
     public async Task<ToolExecutionResult> ExecuteAsync(
@@ -72,7 +77,7 @@ public class YamlToolExecutor : IToolExecutor
     }
 
     /// <summary>
-    /// Web 搜索（百度搜索 - 基于 HtmlAgilityPack 的原生 C# 爬虫）
+    /// Web 搜索 - 多引擎 Fallback（百度优先，Bing 备用）
     /// </summary>
     private async Task<ToolExecutionResult> ExecuteWebSearchAsync(
         Dictionary<string, object> parameters,
@@ -80,7 +85,32 @@ public class YamlToolExecutor : IToolExecutor
     {
         var query = GetParameter<string>(parameters, "query");
         var maxResults = GetParameter<int>(parameters, "max_results", 5);
-        return await BaiduWebSearchTool.SearchAsync(query, maxResults, cancellationToken);
+
+        _logger.LogInformation("[WebSearch] 查询词: {Query}, 最大结果数: {MaxResults}", query, maxResults);
+
+        // 1. 先尝试百度搜索
+        _logger.LogDebug("[WebSearch] 尝试百度搜索...");
+        var baiduResult = await BaiduWebSearchTool.SearchAsync(query, maxResults, cancellationToken);
+        if (baiduResult.Success && !baiduResult.Output.Contains("未找到相关搜索结果"))
+        {
+            _logger.LogInformation("[WebSearch] 百度搜索成功，结果数: {Count}",
+                baiduResult.Metadata?.GetValueOrDefault("result_count", 0));
+            return baiduResult;
+        }
+        _logger.LogDebug("[WebSearch] 百度未返回有效结果，切换到 Bing");
+
+        // 2. 百度失败，尝试 Bing
+        var bingResult = await BingWebSearchTool.SearchAsync(query, maxResults, cancellationToken);
+        if (bingResult.Success && !bingResult.Output.Contains("未找到相关搜索结果"))
+        {
+            _logger.LogInformation("[WebSearch] Bing 搜索成功，结果数: {Count}",
+                bingResult.Metadata?.GetValueOrDefault("result_count", 0));
+            return bingResult;
+        }
+
+        // 3. 都失败，返回百度结果（即使是空的）
+        _logger.LogWarning("[WebSearch] 所有搜索引擎均未返回有效结果，查询词: {Query}", query);
+        return baiduResult;
     }
 
     /// <summary>

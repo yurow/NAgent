@@ -21,7 +21,8 @@ public class SemanticKernelAgentEngine : IAgentEngine
         AgentSession session, 
         string userInput, 
         string? modelId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<DebugEvent>? onDebugEvent = null)
     {
         // TODO: 使用 Semantic Kernel 实现 Agent 执行逻辑
         throw new NotImplementedException("Semantic Kernel 实现待完成");

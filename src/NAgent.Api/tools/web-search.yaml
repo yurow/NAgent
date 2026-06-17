@@ -1,5 +1,5 @@
 name: web_search
-description: 使用 DuckDuckGo 进行网络搜索，获取实时信息。适用于查询最新技术文档、解决方案等。
+description: 使用多搜索引擎（百度 + Bing）进行网络搜索，获取实时信息。百度优先，Bing 自动备用。适用于查询最新技术文档、解决方案等。
 category: web
 security_level: low
 
