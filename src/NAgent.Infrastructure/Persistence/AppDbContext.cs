@@ -40,45 +40,27 @@ public class AppDbContext : SqlSugarScope
         CodeFirst.InitTables(typeof(NAgent.Domain.Entities.User));
         CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.Project));
 
-        // 知识图谱表：检查 Description 列是否允许 NULL，如果不允许则删除重建
-        EnsureKgTablesCorrect();
-    }
-
-    /// <summary>
-    /// 确保知识图谱表结构正确（Description 列可空）
-    /// </summary>
-    private void EnsureKgTablesCorrect()
-    {
-        var nodeTableName = this.EntityMaintenance.GetEntityInfo<NAgent.AgentDomain.Entities.KnowledgeGraphNode>().DbTableName;
-        var edgeTableName = this.EntityMaintenance.GetEntityInfo<NAgent.AgentDomain.Entities.KnowledgeGraphEdge>().DbTableName;
-
-        // 检查 Node 表的 Description 列是否可空
-        var nodeColumns = this.DbMaintenance.GetColumnInfosByTableName(nodeTableName, false);
-        var descColumn = nodeColumns.FirstOrDefault(c => c.DbColumnName.Equals("Description", StringComparison.OrdinalIgnoreCase));
-
-        bool needRebuild = false;
-        if (descColumn != null && descColumn.IsNullable == false)
+        // 知识图谱表：直接创建，如果失败则删除旧表重建
+        try
         {
-            needRebuild = true;
+            CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphNode));
+            CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphEdge));
         }
-
-        // 检查 Edge 表的 Description 列是否可空
-        var edgeColumns = this.DbMaintenance.GetColumnInfosByTableName(edgeTableName, false);
-        var edgeDescColumn = edgeColumns.FirstOrDefault(c => c.DbColumnName.Equals("Description", StringComparison.OrdinalIgnoreCase));
-        if (edgeDescColumn != null && edgeDescColumn.IsNullable == false)
+        catch
         {
-            needRebuild = true;
+            _logger?.LogWarning("[KG] 知识图谱表创建失败，尝试删除旧表后重建...");
+            try
+            {
+                this.DbMaintenance.DropTable("KnowledgeGraphEdge");
+            }
+            catch { }
+            try
+            {
+                this.DbMaintenance.DropTable("KnowledgeGraphNode");
+            }
+            catch { }
+            CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphNode));
+            CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphEdge));
         }
-
-        if (needRebuild)
-        {
-            _logger?.LogWarning("[KG] 知识图谱表结构需要重建（Description 列不可空），正在删除旧表...");
-            this.DbMaintenance.DropTable<NAgent.AgentDomain.Entities.KnowledgeGraphEdge>();
-            this.DbMaintenance.DropTable<NAgent.AgentDomain.Entities.KnowledgeGraphNode>();
-        }
-
-        // 创建表（如果不存在则创建，已删除则重建）
-        CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphNode));
-        CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphEdge));
     }
 }
