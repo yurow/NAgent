@@ -151,7 +151,7 @@
                     <div class="chat-input-area">
                         <textarea 
                             id="chatInput" 
-                            placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)"
+                            placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)&#10;支持上传文件(txt/md/json/yaml/cs/py/js/html/xml)到知识图谱"
                             rows="3"></textarea>
                         <div class="chat-input-controls">
                             <label class="stream-toggle">
@@ -160,8 +160,13 @@
                             </label>
                             <label class="stream-toggle debug-mode-toggle">
                                 <input type="checkbox" id="debugToggle" checked />
-                                <span>🧠 调试模式</span>
+                                <span>调试模式</span>
                             </label>
+                            <input type="file" id="fileUploadInput" style="display: none;" accept=".txt,.md,.json,.yaml,.yml,.cs,.py,.js,.html,.xml" />
+                            <button id="uploadFileBtn" class="btn-upload" title="上传文件到知识图谱">
+                                <span class="icon">📎</span>
+                                <span>上传文件</span>
+                            </button>
                             <button id="sendBtn" class="btn-send">
                                 <span>发送</span>
                                 <span class="icon">➤</span>

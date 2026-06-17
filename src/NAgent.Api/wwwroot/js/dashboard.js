@@ -278,11 +278,15 @@ function chatWithProject(projectId, projectName) {
 // 查看项目记忆
 function viewProjectMemory(projectId, projectName) {
     const token = localStorage.getItem('jwt_token');
-    
+
     // 显示加载状态
     showMemoryModal(projectName, '<p>加载记忆中...</p>');
-    
-    // 获取项目长期记忆摘要
+
+    // 同时获取项目长期记忆和知识图谱
+    let memoryData = null;
+    let kgData = null;
+
+    // 1. 获取项目长期记忆
     $.ajax({
         url: `/api/memory/project/${projectId}/summary?limit=50`,
         type: 'GET',
@@ -290,16 +294,54 @@ function viewProjectMemory(projectId, projectName) {
             'Authorization': `Bearer ${token}`
         },
         success: function(response) {
-            if (response.success && response.data && response.data.length > 0) {
-                displayMemoryContent(response.data);
-            } else {
-                showMemoryModal(projectName, '<p class="empty-memory">暂无记忆内容</p><p class="hint">与 AI Agent 聊天后，记忆会自动保存到这里。</p>');
-            }
+            memoryData = response;
+            checkAndDisplay();
         },
         error: function() {
-            showMemoryModal(projectName, '<p class="error">加载记忆失败，请稍后重试</p>');
+            memoryData = { success: false };
+            checkAndDisplay();
         }
     });
+
+    // 2. 获取知识图谱
+    $.ajax({
+        url: `/api/agent/knowledge-graph/${projectId}`,
+        type: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        success: function(response) {
+            kgData = response;
+            checkAndDisplay();
+        },
+        error: function() {
+            kgData = { success: false };
+            checkAndDisplay();
+        }
+    });
+
+    function checkAndDisplay() {
+        if (memoryData === null || kgData === null) return;
+
+        let html = '';
+
+        // 知识图谱部分
+        if (kgData.success && kgData.data) {
+            html += `<div class="kg-section">`;
+            html += `<h3>📊 知识图谱</h3>`;
+            html += `<pre class="kg-content">${escapeHtml(kgData.data)}</pre>`;
+            html += `</div>`;
+        }
+
+        // 记忆部分
+        if (memoryData.success && memoryData.data && memoryData.data.length > 0) {
+            html += displayMemoryContentHtml(memoryData.data);
+        } else {
+            html += '<p class="empty-memory">暂无对话记忆内容</p><p class="hint">与 AI Agent 聊天后，记忆会自动保存到这里。</p>';
+        }
+
+        showMemoryModal(projectName, html);
+    }
 }
 
 // 显示记忆模态框
@@ -335,10 +377,11 @@ function closeMemoryModal() {
     $('#memoryModal').hide();
 }
 
-// 显示记忆内容
-function displayMemoryContent(memories) {
+// 显示记忆内容（返回HTML字符串）
+function displayMemoryContentHtml(memories) {
     let html = '<div class="memory-list">';
-    
+    html += '<h3>💬 对话记忆</h3>';
+
     memories.forEach((memory, index) => {
         const importanceStars = '⭐'.repeat(memory.importance);
         const categoryLabels = {
@@ -351,7 +394,7 @@ function displayMemoryContent(memories) {
             'TaskContext': '任务上下文'
         };
         const categoryLabel = categoryLabels[memory.category] || memory.category;
-        
+
         html += `
             <div class="memory-item">
                 <div class="memory-header">
@@ -365,8 +408,14 @@ function displayMemoryContent(memories) {
             </div>
         `;
     });
-    
+
     html += '</div>';
+    return html;
+}
+
+// 显示记忆内容（直接渲染到DOM，兼容旧代码）
+function displayMemoryContent(memories) {
+    const html = displayMemoryContentHtml(memories);
     $('#memoryContent').html(html);
 }
 
@@ -589,6 +638,26 @@ function initAgentChat() {
         }
     });
 
+    // 文件上传按钮点击
+    $('#uploadFileBtn').on('click', function() {
+        $('#fileUploadInput').click();
+    });
+
+    // 文件选择后上传
+    $('#fileUploadInput').on('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!currentProjectId) {
+            addSystemMessage('请先选择一个项目');
+            return;
+        }
+
+        uploadFile(file, currentProjectId);
+        // 清空input，允许重复选择同一文件
+        $(this).val('');
+    });
+
     // 清空对话按钮
     $('#clearChatBtn').on('click', function() {
         clearChat();
@@ -722,6 +791,41 @@ function loadAvailableModels() {
 // 生成会话 ID
 function generateSessionId() {
     return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// 上传文件到知识图谱
+function uploadFile(file, projectId) {
+    const token = localStorage.getItem('jwt_token');
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('projectId', projectId);
+
+    addSystemMessage(`正在上传文件 ${file.name} 并提取知识图谱...`);
+
+    $.ajax({
+        url: '/api/agent/upload-file',
+        type: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function(response) {
+            if (response.success) {
+                addSystemMessage(`✅ ${response.data.message}`);
+            } else {
+                addErrorMessage(`上传失败: ${response.message}`);
+            }
+        },
+        error: function(xhr) {
+            let errorMsg = '上传失败';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMsg = xhr.responseJSON.message;
+            }
+            addErrorMessage(`上传失败: ${errorMsg}`);
+        }
+    });
 }
 
 // 发送消息

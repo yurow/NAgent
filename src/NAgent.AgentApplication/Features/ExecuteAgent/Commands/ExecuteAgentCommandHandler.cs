@@ -2,6 +2,7 @@ using MediatR;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
+using NAgent.AgentDomain.Services.KnowledgeGraph;
 using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Tools;
 
@@ -24,6 +25,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
     private readonly ISkillRepository _skillRepository;
     private readonly IToolDefinitionRepository _toolDefinitionRepository;
     private readonly IMemorySystem _memorySystem;
+    private readonly IKnowledgeGraphService _knowledgeGraph;
 
     public ExecuteAgentCommandHandler(
         IAgentEngine agentEngine,
@@ -37,7 +39,8 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         IToolRegistry toolRegistry,
         ISkillRepository skillRepository,
         IToolDefinitionRepository toolDefinitionRepository,
-        IMemorySystem memorySystem)
+        IMemorySystem memorySystem,
+        IKnowledgeGraphService knowledgeGraph)
     {
         _agentEngine = agentEngine ?? throw new ArgumentNullException(nameof(agentEngine));
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
@@ -51,6 +54,7 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
         _skillRepository = skillRepository ?? throw new ArgumentNullException(nameof(skillRepository));
         _toolDefinitionRepository = toolDefinitionRepository ?? throw new ArgumentNullException(nameof(toolDefinitionRepository));
         _memorySystem = memorySystem ?? throw new ArgumentNullException(nameof(memorySystem));
+        _knowledgeGraph = knowledgeGraph ?? throw new ArgumentNullException(nameof(knowledgeGraph));
     }
 
     public async Task<ExecuteAgentResult> Handle(ExecuteAgentCommand request, CancellationToken cancellationToken)
@@ -292,7 +296,23 @@ public class ExecuteAgentCommandHandler : IRequestHandler<ExecuteAgentCommand, E
             // 记忆写入失败不影响主流程
         }
 
-        // 11. 获取模型名称
+        // 11. 提取知识图谱（从对话内容中提取实体和关系）
+        try
+        {
+            var conversationText = $"用户: {userInput}\nAI: {executionResult.Output ?? ""}";
+            await _knowledgeGraph.ExtractAndStoreAsync(
+                projectId,
+                conversationText,
+                source: "conversation",
+                sourceId: request.SessionId,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // 知识图谱提取失败不影响主流程
+        }
+
+        // 12. 获取模型名称
         string? modelName = executionResult.ModelName;
         if (string.IsNullOrEmpty(modelName) && !string.IsNullOrEmpty(request.ModelId))
         {

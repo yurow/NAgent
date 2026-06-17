@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 NAgent 是一个基于 .NET 8 构建的综合性 AI Agent 平台，采用领域驱动设计（DDD）架构。它提供了完整的解决方案，用于构建、管理和部署 AI Agent，支持多 LLM、项目隔离、可扩展的 Skills/Tools 系统以及项目级记忆管理。
+项目并未为多用户，并发设计。但可以满足个人或少量用户一起使用。
 
 ## 目录
 

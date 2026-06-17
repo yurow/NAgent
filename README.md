@@ -3,7 +3,10 @@
 [![.NET](https://img.shields.io/badge/.NET-8.0-blue)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
+## [中文说明](README_CN.md) - 中文说明
+
 NAgent is a comprehensive AI Agent platform built on .NET 8 with Domain-Driven Design (DDD) architecture. It provides a complete solution for building, managing, and deploying AI agents with multi-LLM support, project isolation, extensible Skills/Tools system, and project-level memory management.
+This project lacks multi-user concurrency design, but it works well for personal use or a tiny number of concurrent users.
 
 ## Table of Contents
 
