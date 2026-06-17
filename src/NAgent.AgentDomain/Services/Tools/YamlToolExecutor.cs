@@ -132,6 +132,7 @@ public class YamlToolExecutor : IToolExecutor
 
     /// <summary>
     /// 为搜索结果抓取详情内容（前3个结果）
+    /// 串行请求，每个请求间隔3秒，避免触发验证码
     /// </summary>
     private async Task FetchDetailsForResultsAsync(ToolExecutionResult searchResult, CancellationToken cancellationToken)
     {
@@ -141,30 +142,28 @@ public class YamlToolExecutor : IToolExecutor
             var urls = ExtractUrlsFromSearchOutput(searchResult.Output);
             if (urls.Count == 0) return;
 
-            _logger.LogInformation("[WebSearch] 开始抓取 {Count} 个链接的详情...", Math.Min(urls.Count, 3));
+            _logger.LogInformation("[WebSearch] 开始串行抓取 {Count} 个链接的详情（间隔3秒）...", Math.Min(urls.Count, 3));
 
-            var fetchTasks = urls.Take(3).Select(async url =>
+            var detailLines = new List<string>();
+            foreach (var url in urls.Take(3))
             {
                 try
                 {
                     var detail = await BaiduWebSearchTool.FetchUrlDetailAsync(url, 1500, cancellationToken);
-                    return new { Url = url, Detail = detail };
+                    if (!string.IsNullOrEmpty(detail))
+                    {
+                        detailLines.Add($"\n【详情: {url}】\n{detail}");
+                    }
                 }
                 catch
                 {
-                    return new { Url = url, Detail = (string?)null };
+                    // 单个链接失败不影响其他链接
                 }
-            });
 
-            var details = await Task.WhenAll(fetchTasks);
-
-            // 将详情追加到输出中
-            var detailLines = new List<string>();
-            foreach (var d in details)
-            {
-                if (!string.IsNullOrEmpty(d.Detail))
+                // 间隔3秒再请求下一个，避免触发验证码
+                if (urls.Take(3).Last() != url)
                 {
-                    detailLines.Add($"\n【详情: {d.Url}】\n{d.Detail}");
+                    await Task.Delay(3000, cancellationToken);
                 }
             }
 
