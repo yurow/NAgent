@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
+using NAgent.AgentDomain.Services.KnowledgeGraph;
 using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Skills;
 using NAgent.AgentDomain.Services.Tools;
@@ -11,6 +12,7 @@ namespace NAgent.AgentInfrastructure.Agents.LangChain;
 /// <summary>
 /// 基于 LangChain 的 Agent 引擎实现 - 集成 Skill 编排和 Tool 执行
 /// 支持迭代式 Skill 调用，带防死循环机制
+/// 集成知识图谱辅助判断
 /// </summary>
 public class LangChainAgentEngine : IAgentEngine
 {
@@ -18,6 +20,7 @@ public class LangChainAgentEngine : IAgentEngine
     private readonly IToolRegistry _toolRegistry;
     private readonly ISkillExecutor _skillExecutor;
     private readonly IMemorySystem _memorySystem;
+    private readonly IKnowledgeGraphService _knowledgeGraph;
     private readonly ILogger<LangChainAgentEngine>? _logger;
 
     /// <summary>
@@ -30,12 +33,14 @@ public class LangChainAgentEngine : IAgentEngine
         IToolRegistry toolRegistry,
         ISkillExecutor skillExecutor,
         IMemorySystem memorySystem,
+        IKnowledgeGraphService knowledgeGraph,
         ILogger<LangChainAgentEngine>? logger = null)
     {
         _llmClient = llmClient ?? throw new ArgumentNullException(nameof(llmClient));
         _toolRegistry = toolRegistry ?? throw new ArgumentNullException(nameof(toolRegistry));
         _skillExecutor = skillExecutor ?? throw new ArgumentNullException(nameof(skillExecutor));
         _memorySystem = memorySystem ?? throw new ArgumentNullException(nameof(memorySystem));
+        _knowledgeGraph = knowledgeGraph ?? throw new ArgumentNullException(nameof(knowledgeGraph));
         _logger = logger;
     }
 
@@ -559,6 +564,22 @@ public class LangChainAgentEngine : IAgentEngine
             sb.AppendLine("项目规范文档 (spec.md):");
             sb.AppendLine(specPreview);
             sb.AppendLine();
+        }
+
+        // 查询知识图谱，辅助LLM判断
+        try
+        {
+            var kgResult = _knowledgeGraph.QueryAsync(session.ProjectId, currentInput, limit: 10).GetAwaiter().GetResult();
+            if (kgResult.HasResults)
+            {
+                sb.AppendLine("【项目知识图谱】");
+                sb.AppendLine(kgResult.ToSummary());
+                sb.AppendLine();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "查询知识图谱失败，跳过");
         }
 
         sb.AppendLine($"当前输入: {currentInput}");

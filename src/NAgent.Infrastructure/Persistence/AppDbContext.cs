@@ -39,5 +39,7 @@ public class AppDbContext : SqlSugarScope
         // 创建表（如果不存在）
         CodeFirst.InitTables(typeof(NAgent.Domain.Entities.User));
         CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.Project));
+        CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphNode));
+        CodeFirst.InitTables(typeof(NAgent.AgentDomain.Entities.KnowledgeGraphEdge));
     }
 }

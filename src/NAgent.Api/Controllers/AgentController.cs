@@ -6,6 +6,7 @@ using NAgent.AgentApplication.Features.ExecuteAgent.Commands;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Repositories;
+using NAgent.AgentDomain.Services.KnowledgeGraph;
 using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Tools;
 using NAgent.Shared.Responses;
@@ -29,8 +30,10 @@ public class AgentController : ControllerBase
     private readonly IAgentEngine _agentEngine;
     private readonly IAgentSessionRepository _sessionRepository;
     private readonly IMemorySystem _memorySystem;
+    private readonly IKnowledgeGraphService _knowledgeGraph;
+    private readonly ILogger<AgentController>? _logger;
 
-    public AgentController(IMediator mediator, ILlmClient llmClient, IWorkspaceManager workspaceManager, IIntentService intentService, IToolRegistry toolRegistry, IAgentEngine agentEngine, IAgentSessionRepository sessionRepository, IMemorySystem memorySystem)
+    public AgentController(IMediator mediator, ILlmClient llmClient, IWorkspaceManager workspaceManager, IIntentService intentService, IToolRegistry toolRegistry, IAgentEngine agentEngine, IAgentSessionRepository sessionRepository, IMemorySystem memorySystem, IKnowledgeGraphService knowledgeGraph, ILogger<AgentController>? logger = null)
     {
         _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         _llmClient = llmClient ?? throw new ArgumentNullException(nameof(llmClient));
@@ -40,6 +43,8 @@ public class AgentController : ControllerBase
         _agentEngine = agentEngine ?? throw new ArgumentNullException(nameof(agentEngine));
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _memorySystem = memorySystem ?? throw new ArgumentNullException(nameof(memorySystem));
+        _knowledgeGraph = knowledgeGraph ?? throw new ArgumentNullException(nameof(knowledgeGraph));
+        _logger = logger;
     }
 
     /// <summary>
@@ -422,6 +427,81 @@ public class AgentController : ControllerBase
             cancellationToken);
 
         return Ok(ApiResponse<IntentInferenceResult>.SuccessResponse(result));
+    }
+
+    /// <summary>
+    /// 上传文件并提取知识图谱
+    /// 支持 txt, md, json, yaml, cs, py, js, html, xml 等文本文件
+    /// </summary>
+    [HttpPost("upload-file")]
+    [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
+    public async Task<IActionResult> UploadFileAsync(
+        [FromForm] IFormFile file,
+        [FromForm] string projectId,
+        CancellationToken cancellationToken)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse.FailureResponse("文件不能为空"));
+
+        if (string.IsNullOrWhiteSpace(projectId) || !Guid.TryParse(projectId, out var projectIdGuid))
+            return BadRequest(ApiResponse.FailureResponse("缺少有效的 projectId"));
+
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+            return Unauthorized(ApiResponse.FailureResponse("无法获取用户信息"));
+
+        // 保存文件到工作目录
+        var workspacePath = _workspaceManager.EnsureProjectWorkspace(userId, projectIdGuid);
+        var filePath = Path.Combine(workspacePath, file.FileName);
+
+        // 防止路径遍历
+        if (!filePath.StartsWith(workspacePath))
+            return BadRequest(ApiResponse.FailureResponse("非法文件路径"));
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream, cancellationToken);
+        }
+
+        // 读取文件内容并提取知识图谱
+        try
+        {
+            var content = await System.IO.File.ReadAllTextAsync(filePath, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(content) && content.Length < 500_000) // 限制500KB文本
+            {
+                await _knowledgeGraph.ExtractAndStoreAsync(
+                    projectIdGuid,
+                    content,
+                    source: "uploaded_file",
+                    sourceId: file.FileName,
+                    cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "提取文件知识图谱失败: {FileName}", file.FileName);
+        }
+
+        return Ok(ApiResponse<object>.SuccessResponse(new
+        {
+            fileName = file.FileName,
+            fileSize = file.Length,
+            message = $"文件 {file.FileName} 上传成功，已提取知识图谱"
+        }));
+    }
+
+    /// <summary>
+    /// 获取项目知识图谱摘要
+    /// </summary>
+    [HttpGet("knowledge-graph/{projectId}")]
+    public async Task<IActionResult> GetKnowledgeGraphAsync(string projectId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(projectId) || !Guid.TryParse(projectId, out var projectIdGuid))
+            return BadRequest(ApiResponse.FailureResponse("缺少有效的 projectId"));
+
+        var summary = await _knowledgeGraph.GetProjectSummaryAsync(projectIdGuid, cancellationToken);
+        return Ok(ApiResponse<string>.SuccessResponse(summary));
     }
 
     /// <summary>

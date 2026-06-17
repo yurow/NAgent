@@ -9,6 +9,7 @@ using NAgent.AgentInfrastructure.Llm;
 using NAgent.AgentInfrastructure.Sandbox;
 using NAgent.AgentDomain.Repositories;
 using NAgent.AgentDomain.Services;
+using NAgent.AgentDomain.Services.KnowledgeGraph;
 using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Skills;
 using NAgent.AgentDomain.Services.Tools;
@@ -93,6 +94,10 @@ public static class DependencyInjection
 
         // ⭐ 注册意图分类与推测服务
         services.AddScoped<IIntentService, IntentServiceImpl>();
+
+        // ⭐ 注册知识图谱服务
+        services.AddScoped<IKnowledgeGraphRepository, SqliteKnowledgeGraphRepository>();
+        services.AddScoped<IKnowledgeGraphService, KnowledgeGraphService>();
 
         return services;
     }

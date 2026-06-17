@@ -49,8 +49,9 @@ public class AgentEngineFactory
         var toolRegistry = serviceProvider.GetRequiredService<IToolRegistry>();
         var skillExecutor = serviceProvider.GetRequiredService<ISkillExecutor>();
         var memorySystem = serviceProvider.GetRequiredService<IMemorySystem>();
+        var knowledgeGraph = serviceProvider.GetRequiredService<NAgent.AgentDomain.Services.KnowledgeGraph.IKnowledgeGraphService>();
         var logger = serviceProvider.GetService<Microsoft.Extensions.Logging.ILogger<LangChainAgentEngine>>();
-        return new LangChainAgentEngine(llmClient, toolRegistry, skillExecutor, memorySystem, logger);
+        return new LangChainAgentEngine(llmClient, toolRegistry, skillExecutor, memorySystem, knowledgeGraph, logger);
     }
 
     private IAgentEngine CreateSemanticKernelEngine(IServiceProvider serviceProvider)
