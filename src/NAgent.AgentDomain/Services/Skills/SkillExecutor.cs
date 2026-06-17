@@ -137,8 +137,8 @@ public class SkillExecutor : ISkillExecutor
             // 构建工具参数（合并用户参数和步骤参数映射）
             var toolParams = BuildToolParameters(step, parameters);
 
-            // 执行工具
-            var toolResult = await tool.ExecuteAsync(toolParams, projectId, cancellationToken);
+            // 执行工具（带重试机制）
+            var toolResult = await ExecuteToolWithRetryAsync(tool, toolParams, projectId, stepNumber, step.ToolName, cancellationToken);
 
             steps.Add(new SkillExecutionStep
             {
@@ -173,7 +173,7 @@ public class SkillExecutor : ISkillExecutor
                 var tool = _toolRegistry.GetTool(toolName);
                 if (tool == null) continue;
 
-                var toolResult = await tool.ExecuteAsync(parameters, projectId, cancellationToken);
+                var toolResult = await ExecuteToolWithRetryAsync(tool, parameters, projectId, stepNumber, toolName, cancellationToken);
 
                 steps.Add(new SkillExecutionStep
                 {
@@ -205,6 +205,93 @@ public class SkillExecutor : ISkillExecutor
         result.SuggestedNextSkill = orchestration.SuggestedNextSkill;
 
         return result;
+    }
+
+    /// <summary>
+    /// 执行工具（带重试机制）
+    /// 失败时等待 2 秒后重试，最多重试 2 次
+    /// 如果重试都失败，尝试查找备用工具
+    /// </summary>
+    private async Task<ToolExecutionResult> ExecuteToolWithRetryAsync(
+        IToolExecutor tool,
+        Dictionary<string, object> parameters,
+        Guid projectId,
+        int stepNumber,
+        string toolName,
+        CancellationToken cancellationToken)
+    {
+        const int maxRetries = 2;
+        const int retryDelayMs = 2000;
+
+        ToolExecutionResult? lastResult = null;
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            if (attempt > 0)
+            {
+                // 等待 2 秒后重试
+                await Task.Delay(retryDelayMs, cancellationToken);
+            }
+
+            var result = await tool.ExecuteAsync(parameters, projectId, cancellationToken);
+
+            if (result.Success)
+            {
+                return result;
+            }
+
+            lastResult = result;
+
+            // 记录重试日志
+            if (attempt < maxRetries)
+            {
+                // 可以在这里记录重试日志
+            }
+        }
+
+        // 所有重试都失败，尝试备用方案
+        var fallbackResult = await TryFallbackToolAsync(toolName, parameters, projectId, cancellationToken);
+        if (fallbackResult != null)
+        {
+            return fallbackResult;
+        }
+
+        // 返回最后一次失败结果
+        return lastResult ?? ToolExecutionResult.Fail($"工具 {toolName} 执行失败，已重试 {maxRetries} 次");
+    }
+
+    /// <summary>
+    /// 尝试使用备用工具
+    /// 例如：百度搜索失败时尝试 Bing 搜索
+    /// </summary>
+    private async Task<ToolExecutionResult?> TryFallbackToolAsync(
+        string originalToolName,
+        Dictionary<string, object> parameters,
+        Guid projectId,
+        CancellationToken cancellationToken)
+    {
+        // 定义备用工具映射
+        var fallbackMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["baidu_web_search"] = "bing_web_search",
+            ["bing_web_search"] = "baidu_web_search",
+            ["web_search"] = "bing_web_search"
+        };
+
+        if (fallbackMap.TryGetValue(originalToolName, out var fallbackToolName))
+        {
+            var fallbackTool = _toolRegistry.GetTool(fallbackToolName);
+            if (fallbackTool != null)
+            {
+                var result = await fallbackTool.ExecuteAsync(parameters, projectId, cancellationToken);
+                if (result.Success)
+                {
+                    return result;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

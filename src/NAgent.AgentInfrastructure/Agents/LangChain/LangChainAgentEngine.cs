@@ -23,7 +23,7 @@ public class LangChainAgentEngine : IAgentEngine
     /// <summary>
     /// 最大迭代次数 - 防止死循环的硬上限
     /// </summary>
-    private const int MaxIterations = 3;
+    private const int MaxIterations = 5;
 
     public LangChainAgentEngine(
         ILlmClient llmClient,
@@ -295,23 +295,43 @@ public class LangChainAgentEngine : IAgentEngine
         string? modelId,
         CancellationToken cancellationToken)
     {
-        var jsonExample1 = "{\"should_continue\": true, \"next_skill\": \"skill名称\", \"next_parameters\": {\"参数名\": \"参数值\"}, \"reasoning\": \"为什么需要继续\"}";
-        var jsonExample2 = "{\"should_continue\": false, \"reasoning\": \"为什么不需要继续\"}";
+        // 获取可用 Skills
+        var skillsDesc = _skillExecutor.GetAvailableSkillsDescription();
 
-        var prompt = $@"你是 NAgent AI 助手。你已经执行了一个 Skill，现在需要判定是否需要继续调用其他 Skill 来完善结果。
+        // 截断输出避免 prompt 太长
+        var truncatedOutput = lastResult.Output?.Length > 2000
+            ? lastResult.Output[..2000] + "\n...(结果已截断)"
+            : lastResult.Output;
 
-用户原始问题: {userInput}
+        // ⭐ 从搜索结果中提取可用的 URL，方便 LLM 直接引用
+        var availableUrls = ExtractUrlsFromResult(lastResult.Output ?? "", 3);
+        var urlsSection = availableUrls.Count > 0
+            ? $"\n搜索结果中可抓取的 URL:\n{string.Join("\n", availableUrls.Select((u, i) => $"  {i + 1}. {u}"))}"
+            : "\n搜索结果中未找到可抓取的 URL。";
 
-上次 Skill 执行结果:
-{lastResult.Output}
+        var prompt = $@"你是 NAgent AI 研究助手。你已经执行了搜索，现在需要决定下一步操作。
 
-是否需要进一步处理? 如果需要，请返回以下 JSON 格式:
-{jsonExample1}
+用户问题: {userInput}
 
-如果不需要继续处理，返回:
-{jsonExample2}
+已有搜索结果:
+{truncatedOutput}
+{urlsSection}
 
-注意: 如果结果已经完整回答了用户问题，或者继续处理不会带来新信息，请返回 should_continue: false。避免无限循环。";
+当前可用 Skills:
+{skillsDesc}
+
+【重要规则 - 按优先级执行】
+
+1. **优先抓取 URL（最常用）**: 如果搜索结果中有相关链接但只有摘要，必须用 web_fetch 抓取 URL 获取详细内容。从上面列出的 URL 中选择最相关的 1 个。
+   返回: {{""should_continue"": true, ""next_skill"": ""web_researcher"", ""next_parameters"": {{""url"": ""选中的URL""}}, ""reasoning"": ""搜索摘要不够详细，需要抓取该页面获取完整内容""}}
+
+2. **换关键词搜索（仅在搜索结果完全不相关时使用）**: 如果搜索结果跟用户问题无关，换关键词再搜。
+   返回: {{""should_continue"": true, ""next_skill"": ""web_researcher"", ""next_parameters"": {{""query"": ""新的搜索关键词""}}, ""reasoning"": ""搜索结果与问题不相关，需要换关键词""}}
+
+3. **停止（结果已充分或无法继续）**: 如果搜索结果已充分回答问题，或多次搜索抓取后仍找不到更多信息，如实说明。
+   返回: {{""should_continue"": false, ""reasoning"": ""已充分回答/已尽力搜索但找不到更多信息""}}
+
+注意: next_parameters 中只传 url 或只传 query，不要同时传两个。不要编造信息。";
 
         try
         {
@@ -350,6 +370,23 @@ public class LangChainAgentEngine : IAgentEngine
         }
 
         return new ContinueDecision(false, null, null, "判定失败，默认退出");
+    }
+
+    /// <summary>
+    /// 从搜索结果输出中提取 URL
+    /// </summary>
+    private List<string> ExtractUrlsFromResult(string output, int maxUrls)
+    {
+        var urls = new List<string>();
+        var matches = System.Text.RegularExpressions.Regex.Matches(
+            output, @"链接:\s*(https?://\S+)", System.Text.RegularExpressions.RegexOptions.Multiline);
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            var url = match.Groups[1].Value.Trim();
+            if (!urls.Contains(url) && urls.Count < maxUrls)
+                urls.Add(url);
+        }
+        return urls;
     }
 
     /// <summary>

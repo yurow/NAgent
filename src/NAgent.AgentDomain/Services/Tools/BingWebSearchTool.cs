@@ -27,7 +27,7 @@ public class BingWebSearchTool
     /// </summary>
     public static async Task<ToolExecutionResult> SearchAsync(
         string query,
-        int maxResults = 5,
+        int maxResults = 10,
         CancellationToken cancellationToken = default)
     {
         // 频率限制

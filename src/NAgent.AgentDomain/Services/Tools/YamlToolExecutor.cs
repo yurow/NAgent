@@ -69,6 +69,7 @@ public class YamlToolExecutor : IToolExecutor
         return ToolName.ToLowerInvariant() switch
         {
             "web_search" => ExecuteWebSearchAsync(parameters, cancellationToken),
+            "web_fetch" => ExecuteWebFetchAsync(parameters, cancellationToken),
             "local_file_read" => ExecuteFileReadAsync(parameters, projectId, cancellationToken),
             "local_file_write" => ExecuteFileWriteAsync(parameters, projectId, cancellationToken),
             "list_workspace_files" => ExecuteListFilesAsync(parameters, projectId, cancellationToken),
@@ -78,15 +79,17 @@ public class YamlToolExecutor : IToolExecutor
 
     /// <summary>
     /// Web 搜索 - 多引擎 Fallback（百度优先，Bing 备用）
+    /// 搜索成功后自动抓取前3个结果的详情内容
     /// </summary>
     private async Task<ToolExecutionResult> ExecuteWebSearchAsync(
         Dictionary<string, object> parameters,
         CancellationToken cancellationToken)
     {
         var query = GetParameter<string>(parameters, "query");
-        var maxResults = GetParameter<int>(parameters, "max_results", 5);
+        var maxResults = GetParameter<int>(parameters, "max_results", 10);
+        var fetchDetails = GetParameter<bool>(parameters, "fetch_details", true);
 
-        _logger.LogInformation("[WebSearch] 查询词: {Query}, 最大结果数: {MaxResults}", query, maxResults);
+        _logger.LogInformation("[WebSearch] 查询词: {Query}, 最大结果数: {MaxResults}, 抓取详情: {FetchDetails}", query, maxResults, fetchDetails);
 
         // 1. 先尝试百度搜索
         _logger.LogDebug("[WebSearch] 尝试百度搜索...");
@@ -95,6 +98,13 @@ public class YamlToolExecutor : IToolExecutor
         {
             _logger.LogInformation("[WebSearch] 百度搜索成功，结果数: {Count}",
                 baiduResult.Metadata?.GetValueOrDefault("result_count", 0));
+
+            // 自动抓取详情
+            if (fetchDetails)
+            {
+                await FetchDetailsForResultsAsync(baiduResult, cancellationToken);
+            }
+
             return baiduResult;
         }
         _logger.LogDebug("[WebSearch] 百度未返回有效结果，切换到 Bing");
@@ -105,12 +115,176 @@ public class YamlToolExecutor : IToolExecutor
         {
             _logger.LogInformation("[WebSearch] Bing 搜索成功，结果数: {Count}",
                 bingResult.Metadata?.GetValueOrDefault("result_count", 0));
+
+            // 自动抓取详情
+            if (fetchDetails)
+            {
+                await FetchDetailsForResultsAsync(bingResult, cancellationToken);
+            }
+
             return bingResult;
         }
 
         // 3. 都失败，返回百度结果（即使是空的）
         _logger.LogWarning("[WebSearch] 所有搜索引擎均未返回有效结果，查询词: {Query}", query);
         return baiduResult;
+    }
+
+    /// <summary>
+    /// 为搜索结果抓取详情内容（前3个结果）
+    /// </summary>
+    private async Task FetchDetailsForResultsAsync(ToolExecutionResult searchResult, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 从输出文本中提取链接
+            var urls = ExtractUrlsFromSearchOutput(searchResult.Output);
+            if (urls.Count == 0) return;
+
+            _logger.LogInformation("[WebSearch] 开始抓取 {Count} 个链接的详情...", Math.Min(urls.Count, 3));
+
+            var fetchTasks = urls.Take(3).Select(async url =>
+            {
+                try
+                {
+                    var detail = await BaiduWebSearchTool.FetchUrlDetailAsync(url, 1500, cancellationToken);
+                    return new { Url = url, Detail = detail };
+                }
+                catch
+                {
+                    return new { Url = url, Detail = (string?)null };
+                }
+            });
+
+            var details = await Task.WhenAll(fetchTasks);
+
+            // 将详情追加到输出中
+            var detailLines = new List<string>();
+            foreach (var d in details)
+            {
+                if (!string.IsNullOrEmpty(d.Detail))
+                {
+                    detailLines.Add($"\n【详情: {d.Url}】\n{d.Detail}");
+                }
+            }
+
+            if (detailLines.Count > 0)
+            {
+                searchResult.Output += "\n\n=== 搜索结果详情 ===" + string.Join("", detailLines);
+                _logger.LogInformation("[WebSearch] 成功抓取 {Count} 个链接的详情", detailLines.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("[WebSearch] 抓取详情时出错: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 从搜索输出中提取 URL 链接
+    /// </summary>
+    private List<string> ExtractUrlsFromSearchOutput(string output)
+    {
+        var urls = new List<string>();
+        if (string.IsNullOrWhiteSpace(output)) return urls;
+
+        // 匹配 "链接: http://..." 或 "链接: https://..."
+        var matches = System.Text.RegularExpressions.Regex.Matches(output, @"链接:\s*(https?://[^\s]+)");
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            var url = match.Groups[1].Value.Trim();
+            if (!string.IsNullOrEmpty(url) && !urls.Contains(url))
+                urls.Add(url);
+        }
+
+        return urls;
+    }
+
+    /// <summary>
+    /// Web Fetch - 抓取指定 URL 的网页正文内容
+    /// </summary>
+    private async Task<ToolExecutionResult> ExecuteWebFetchAsync(
+        Dictionary<string, object> parameters,
+        CancellationToken cancellationToken)
+    {
+        var url = GetParameter<string>(parameters, "url");
+        if (string.IsNullOrWhiteSpace(url))
+            return ToolExecutionResult.Fail("缺少必填参数: url");
+
+        var maxLength = GetParameter<int>(parameters, "max_length", 3000);
+
+        _logger.LogInformation("[WebFetch] 抓取 URL: {Url}, 最大长度: {MaxLength}", url, maxLength);
+
+        try
+        {
+            using var handler = new HttpClientHandler
+            {
+                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 5
+            };
+            using var client = new HttpClient(handler);
+            client.Timeout = TimeSpan.FromSeconds(15);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,*/*;q=0.8");
+            client.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
+
+            var response = await client.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var statusCode = (int)response.StatusCode;
+                _logger.LogWarning("[WebFetch] HTTP {StatusCode} 抓取失败: {Url}", statusCode, url);
+                return ToolExecutionResult.Fail($"HTTP {statusCode} 抓取失败");
+            }
+
+            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(html))
+                return ToolExecutionResult.Fail("页面内容为空");
+
+            // 用 HtmlAgilityPack 提取正文
+            var doc = new HtmlAgilityPack.HtmlDocument();
+            doc.LoadHtml(html);
+
+            // 移除无关元素
+            foreach (var node in doc.DocumentNode.SelectNodes("//script|//style|//nav|//footer|//header|//aside|//iframe|//noscript") ?? new HtmlAgilityPack.HtmlNodeCollection(null))
+            {
+                node.Remove();
+            }
+
+            // 尝试提取标题
+            var titleNode = doc.DocumentNode.SelectSingleNode("//title");
+            var title = titleNode?.InnerText?.Trim() ?? "";
+
+            // 尝试提取 article 或 main 标签
+            var mainNode = doc.DocumentNode.SelectSingleNode("//article") 
+                ?? doc.DocumentNode.SelectSingleNode("//main")
+                ?? doc.DocumentNode.SelectSingleNode("//body");
+
+            var text = mainNode?.InnerText ?? doc.DocumentNode.InnerText ?? "";
+
+            // 清理文本：去除多余空白
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+
+            // 截断
+            if (text.Length > maxLength)
+                text = text[..maxLength] + "...(内容已截断)";
+
+            var output = $"标题: {title}\n来源: {url}\n\n{text}";
+
+            _logger.LogInformation("[WebFetch] 抓取成功，文本长度: {Length}", text.Length);
+            return ToolExecutionResult.Ok(output);
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogWarning("[WebFetch] 抓取超时: {Url}", url);
+            return ToolExecutionResult.Fail("抓取超时（15秒）");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("[WebFetch] 抓取异常: {Url}, {Message}", url, ex.Message);
+            return ToolExecutionResult.Fail($"抓取失败: {ex.Message}");
+        }
     }
 
     /// <summary>

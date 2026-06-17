@@ -13,7 +13,7 @@ parameters:
     description: 最大返回结果数（1-10）
     type: integer
     required: false
-    default: 5
+    default: 10
 
 execution:
   type: local

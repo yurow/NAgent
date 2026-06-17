@@ -24,7 +24,7 @@ public class BaiduWebSearchTool
 
     public static async Task<ToolExecutionResult> SearchAsync(
         string query,
-        int maxResults = 5,
+        int maxResults = 10,
         CancellationToken cancellationToken = default)
     {
         var waitResult = CheckRateLimit();
@@ -314,10 +314,83 @@ public class BaiduWebSearchTool
                 lines.Add($"   {r.Snippet}");
             if (!string.IsNullOrEmpty(r.Url))
                 lines.Add($"   链接: {r.Url}");
+            // 如果抓取了详情，追加详情内容
+            if (!string.IsNullOrEmpty(r.DetailContent))
+            {
+                lines.Add($"   详情: {r.DetailContent}");
+            }
             lines.Add("");
         }
 
         return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// 抓取搜索结果链接的详情内容
+    /// </summary>
+    public static async Task<string?> FetchUrlDetailAsync(string url, int maxLength = 1500, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
+
+        // 跳过百度自有链接（百科除外）
+        if (url.Contains("baidu.com") && !url.Contains("baike.baidu.com"))
+            return null;
+
+        try
+        {
+            using var handler = new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                AllowAutoRedirect = true,
+                MaxAutomaticRedirections = 5
+            };
+            using var client = new HttpClient(handler);
+            client.Timeout = TimeSpan.FromSeconds(10);
+
+            var ua = UserAgents[Random.Next(UserAgents.Count)];
+            client.DefaultRequestHeaders.Add("User-Agent", ua);
+            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,*/*;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+
+            var response = await client.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(html))
+                return null;
+
+            // 提取正文
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            // 移除无关元素
+            foreach (var node in doc.DocumentNode.SelectNodes("//script|//style|//nav|//footer|//header|//aside|//iframe|//noscript|//advertisement") ?? new HtmlNodeCollection(null))
+            {
+                node.Remove();
+            }
+
+            // 优先提取 article 或 main 标签
+            var mainNode = doc.DocumentNode.SelectSingleNode("//article")
+                ?? doc.DocumentNode.SelectSingleNode("//main")
+                ?? doc.DocumentNode.SelectSingleNode("//body");
+
+            var text = mainNode?.InnerText ?? doc.DocumentNode.InnerText ?? "";
+
+            // 清理文本
+            text = System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim();
+
+            // 截断
+            if (text.Length > maxLength)
+                text = text[..maxLength] + "...(内容已截断)";
+
+            return text;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     internal class SearchResult
@@ -325,5 +398,6 @@ public class BaiduWebSearchTool
         public string Title { get; set; } = "";
         public string Snippet { get; set; } = "";
         public string Url { get; set; } = "";
+        public string? DetailContent { get; set; }
     }
 }

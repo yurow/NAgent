@@ -1,0 +1,20 @@
+name: web_fetch
+description: 抓取指定URL的网页正文内容。用于从搜索结果中点击进入详细页面获取更多信息。
+category: web
+security_level: low
+
+parameters:
+  - name: url
+    description: 要抓取的网页URL
+    type: string
+    required: true
+
+  - name: max_length
+    description: 返回正文的最大字符数（默认3000）
+    type: integer
+    required: false
+    default: 3000
+
+execution:
+  type: local
+  timeout_seconds: 20
