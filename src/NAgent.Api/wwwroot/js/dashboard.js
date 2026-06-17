@@ -283,8 +283,8 @@ function viewProjectMemory(projectId, projectName) {
     showMemoryModal(projectName, '<p>加载记忆中...</p>');
 
     // 同时获取项目长期记忆和知识图谱
-    let memoryData = null;
-    let kgData = null;
+    var viewMemoryData = null;
+    var viewKgData = null;
 
     // 1. 获取项目长期记忆
     $.ajax({
@@ -294,12 +294,12 @@ function viewProjectMemory(projectId, projectName) {
             'Authorization': `Bearer ${token}`
         },
         success: function(response) {
-            memoryData = response;
-            checkAndDisplay();
+            viewMemoryData = response;
+            checkAndDisplayMemory();
         },
         error: function() {
-            memoryData = { success: false };
-            checkAndDisplay();
+            viewMemoryData = { success: false };
+            checkAndDisplayMemory();
         }
     });
 
@@ -311,31 +311,31 @@ function viewProjectMemory(projectId, projectName) {
             'Authorization': `Bearer ${token}`
         },
         success: function(response) {
-            kgData = response;
-            checkAndDisplay();
+            viewKgData = response;
+            checkAndDisplayMemory();
         },
         error: function() {
-            kgData = { success: false };
-            checkAndDisplay();
+            viewKgData = { success: false };
+            checkAndDisplayMemory();
         }
     });
 
-    function checkAndDisplay() {
-        if (memoryData === null || kgData === null) return;
+    function checkAndDisplayMemory() {
+        if (viewMemoryData === null || viewKgData === null) return;
 
-        let html = '';
+        var html = '';
 
         // 知识图谱部分
-        if (kgData.success && kgData.data) {
-            html += `<div class="kg-section">`;
-            html += `<h3>📊 知识图谱</h3>`;
-            html += `<pre class="kg-content">${escapeHtml(kgData.data)}</pre>`;
-            html += `</div>`;
+        if (viewKgData.success && viewKgData.data) {
+            html += '<div class="kg-section">';
+            html += '<h3>📊 知识图谱</h3>';
+            html += '<pre class="kg-content">' + escapeHtml(viewKgData.data) + '</pre>';
+            html += '</div>';
         }
 
         // 记忆部分
-        if (memoryData.success && memoryData.data && memoryData.data.length > 0) {
-            html += displayMemoryContentHtml(memoryData.data);
+        if (viewMemoryData.success && viewMemoryData.data && viewMemoryData.data.length > 0) {
+            html += displayMemoryContentHtml(viewMemoryData.data);
         } else {
             html += '<p class="empty-memory">暂无对话记忆内容</p><p class="hint">与 AI Agent 聊天后，记忆会自动保存到这里。</p>';
         }
