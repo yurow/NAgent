@@ -10,6 +10,7 @@ public class KnowledgeGraphNode
     /// <summary>
     /// 节点ID
     /// </summary>
+    [SugarColumn(IsPrimaryKey = true)]
     public Guid Id { get; set; } = Guid.NewGuid();
 
     /// <summary>
@@ -68,6 +69,7 @@ public class KnowledgeGraphEdge
     /// <summary>
     /// 边ID
     /// </summary>
+    [SugarColumn(IsPrimaryKey = true)]
     public Guid Id { get; set; } = Guid.NewGuid();
 
     /// <summary>
