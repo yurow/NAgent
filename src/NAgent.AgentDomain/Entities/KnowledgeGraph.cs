@@ -1,3 +1,5 @@
+using SqlSugar;
+
 namespace NAgent.AgentDomain.Entities;
 
 /// <summary>
@@ -28,6 +30,7 @@ public class KnowledgeGraphNode
     /// <summary>
     /// 实体描述/摘要
     /// </summary>
+    [SugarColumn(IsNullable = true)]
     public string? Description { get; set; }
 
     /// <summary>
@@ -38,6 +41,7 @@ public class KnowledgeGraphNode
     /// <summary>
     /// 来源标识（如文件路径、会话ID、搜索关键词）
     /// </summary>
+    [SugarColumn(IsNullable = true)]
     public string? SourceId { get; set; }
 
     /// <summary>
@@ -89,6 +93,7 @@ public class KnowledgeGraphEdge
     /// <summary>
     /// 关系描述
     /// </summary>
+    [SugarColumn(IsNullable = true)]
     public string? Description { get; set; }
 
     /// <summary>
