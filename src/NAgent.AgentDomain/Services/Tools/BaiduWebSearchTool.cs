@@ -327,6 +327,7 @@ public class BaiduWebSearchTool
 
     /// <summary>
     /// 抓取搜索结果链接的详情内容
+    /// 支持百度跳转链接（先获取真实URL再抓取）
     /// </summary>
     public static async Task<string?> FetchUrlDetailAsync(string url, int maxLength = 1500, CancellationToken cancellationToken = default)
     {
@@ -339,6 +340,11 @@ public class BaiduWebSearchTool
 
         try
         {
+            // 如果是百度跳转链接，先获取真实URL
+            var realUrl = await ResolveBaiduRedirectAsync(url, cancellationToken);
+            if (string.IsNullOrEmpty(realUrl))
+                return null;
+
             using var handler = new HttpClientHandler
             {
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
@@ -353,7 +359,7 @@ public class BaiduWebSearchTool
             client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,*/*;q=0.8");
             client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
 
-            var response = await client.GetAsync(url, cancellationToken);
+            var response = await client.GetAsync(realUrl, cancellationToken);
             if (!response.IsSuccessStatusCode)
                 return null;
 
@@ -386,6 +392,66 @@ public class BaiduWebSearchTool
                 text = text[..maxLength] + "...(内容已截断)";
 
             return text;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 解析百度跳转链接，获取真实URL
+    /// 百度跳转链接如：http://www.baidu.com/link?url=xxx
+    /// 需要跟随重定向获取真实目标URL
+    /// </summary>
+    private static async Task<string?> ResolveBaiduRedirectAsync(string url, CancellationToken cancellationToken)
+    {
+        // 如果不是百度跳转链接，直接返回
+        if (!url.Contains("baidu.com/link?url="))
+            return url;
+
+        try
+        {
+            using var handler = new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                AllowAutoRedirect = false, // 不自动重定向，手动获取 Location header
+                MaxAutomaticRedirections = 0
+            };
+            using var client = new HttpClient(handler);
+            client.Timeout = TimeSpan.FromSeconds(10);
+
+            var ua = UserAgents[Random.Next(UserAgents.Count)];
+            client.DefaultRequestHeaders.Add("User-Agent", ua);
+            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,*/*;q=0.8");
+            client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/s?wd=test");
+            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9");
+
+            var response = await client.GetAsync(url, cancellationToken);
+
+            // 301/302 重定向
+            if (response.StatusCode == System.Net.HttpStatusCode.MovedPermanently ||
+                response.StatusCode == System.Net.HttpStatusCode.Found ||
+                response.StatusCode == System.Net.HttpStatusCode.SeeOther)
+            {
+                var location = response.Headers.Location?.ToString();
+                if (!string.IsNullOrEmpty(location))
+                {
+                    // 如果是相对URL，补全为绝对URL
+                    if (location.StartsWith("/"))
+                    {
+                        var uri = new Uri(url);
+                        location = $"{uri.Scheme}://{uri.Host}{location}";
+                    }
+                    return location;
+                }
+            }
+
+            // 如果响应成功（200），可能是直接返回了页面，返回原始URL
+            if (response.IsSuccessStatusCode)
+                return url;
+
+            return null;
         }
         catch
         {
