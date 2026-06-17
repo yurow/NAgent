@@ -16,6 +16,7 @@ NAgent is a comprehensive AI Agent platform built on .NET 8 with Domain-Driven D
 - [API Reference](#api-reference)
 - [Configuration](#configuration)
 - [Security](#security)
+- [Disclaimer](#disclaimer)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -44,18 +45,21 @@ NAgent is a comprehensive AI Agent platform built on .NET 8 with Domain-Driven D
   - LangChain-based agent engine with extensible architecture
   - Semantic Kernel engine support (planned)
   - Session management with conversation history
+  - **Reasoning chain display** - Shows the agent's thought process in the chat UI
 
 - **Skills System**
   - Extensible Skills defined via Markdown documents with YAML Front Matter
   - Automatic loading from `skills/` directory
   - Skill categorization and version management
   - Association with Tools for capability composition
+  - **Skill wraps Tool execution** - Model selects Skills, code handles Tool orchestration
 
 - **Tools System**
   - Tool definitions via YAML configuration files
   - Security level classification (Low/Medium/High)
   - Multiple execution types: local, sandbox, HTTP, command
   - Parameter validation with type checking and enum support
+  - **Built-in Tools**: file read/write, file listing, web search
 
 - **Project-Level Memory System**
   - Short-term memory: Recent conversation context (last 20 messages)
@@ -78,6 +82,7 @@ NAgent is a comprehensive AI Agent platform built on .NET 8 with Domain-Driven D
 - LLM provider and model configuration UI
 - User management interface (admin)
 - Skills and Tools management panels
+- **Reasoning chain visualization** in chat messages
 
 ## Architecture
 
@@ -86,39 +91,39 @@ NAgent adopts a **Domain-Driven Design (DDD) layered architecture** with two par
 ### Core System (Base DDD)
 
 ```
-┌─────────────────────────────────────────┐
-│              NAgent.Api                  │  ← REST API, Middleware, Static Files
-├─────────────────────────────────────────┤
-│         NAgent.Application               │  ← CQRS Commands/Queries, DTOs, Validators
-├─────────────────────────────────────────┤
-│           NAgent.Domain                  │  ← Entities, Domain Events, Repository Interfaces
-├─────────────────────────────────────────┤
-│        NAgent.Infrastructure             │  ← SqlSugar + SQLite, Repository Implementations
-├─────────────────────────────────────────┤
-│           NAgent.Shared                  │  ← Common Response Models, Exceptions
-└─────────────────────────────────────────┘
++-----------------------------------------+
+|              NAgent.Api                  |  <- REST API, Middleware, Static Files
++-----------------------------------------+
+|         NAgent.Application               |  <- CQRS Commands/Queries, DTOs, Validators
++-----------------------------------------+
+|           NAgent.Domain                  |  <- Entities, Domain Events, Repository Interfaces
++-----------------------------------------+
+|        NAgent.Infrastructure             |  <- SqlSugar + SQLite, Repository Implementations
++-----------------------------------------+
+|           NAgent.Shared                  |  <- Common Response Models, Exceptions
++-----------------------------------------+
 ```
 
 ### Agent Subsystem (AI Extension)
 
 ```
-┌─────────────────────────────────────────┐
-│              NAgent.Api                  │  ← Shared API Layer
-├─────────────────────────────────────────┤
-│      NAgent.AgentApplication             │  ← Agent CQRS, LLM Management
-├─────────────────────────────────────────┤
-│        NAgent.AgentDomain                │  ← Agent Entities, Memory, Skills/Tools
-├─────────────────────────────────────────┤
-│     NAgent.AgentInfrastructure           │  ← LangChain/SK Engines, Multi-Model LLM
-├─────────────────────────────────────────┤
-│         NAgent.AgentCore                 │  ← Agent Runner, Tool Dispatcher, Security
-└─────────────────────────────────────────┘
++-----------------------------------------+
+|              NAgent.Api                  |  <- Shared API Layer
++-----------------------------------------+
+|      NAgent.AgentApplication             |  <- Agent CQRS, LLM Management
++-----------------------------------------+
+|        NAgent.AgentDomain                |  <- Agent Entities, Memory, Skills/Tools
++-----------------------------------------+
+|     NAgent.AgentInfrastructure           |  <- LangChain/SK Engines, Multi-Model LLM
++-----------------------------------------+
+|         NAgent.AgentCore                 |  <- Agent Runner, Tool Dispatcher, Security
++-----------------------------------------+
 ```
 
 ### Dependency Flow
 
 ```
-Api → Application/AgentApplication → Domain/AgentDomain → Infrastructure/AgentInfrastructure
+Api -> Application/AgentApplication -> Domain/AgentDomain -> Infrastructure/AgentInfrastructure
 Shared is referenced by all layers
 ```
 
@@ -147,6 +152,7 @@ Shared is referenced by all layers
 | LLM Integration | LangChain.Core | 0.x |
 | YAML Parsing | YamlDotNet | 16.x |
 | Markdown Parsing | Markdig | 0.40.x |
+| HTML Parsing | HtmlAgilityPack | 1.12.x |
 | Frontend | jQuery | 3.7.1 |
 | Testing | xUnit | 2.x |
 
@@ -204,7 +210,27 @@ The application uses `appsettings.json` for configuration. Key settings:
 - [Quick Start Guide](QUICKSTART.md) - Step-by-step tutorial for new users
 - [Project Structure](PROJECT_STRUCTURE.md) - Detailed project organization
 - [Generation Report](GENERATION_REPORT.md) - Development history and design decisions
-- [中文文档](README_CN.md) - Chinese documentation
+- [Chinese Docs](README_CN.md) - Chinese documentation
+
+## Project Structure
+
+```
+g:\NAgent/
+├── src/                          # Source code (9 projects)
+│   ├── NAgent.Api/               # REST API layer
+│   ├── NAgent.Application/       # Core application layer
+│   ├── NAgent.Domain/            # Core domain layer
+│   ├── NAgent.Infrastructure/    # Core infrastructure layer
+│   ├── NAgent.AgentApplication/  # Agent application layer
+│   ├── NAgent.AgentDomain/       # Agent domain layer
+│   ├── NAgent.AgentInfrastructure/# Agent infrastructure layer
+│   ├── NAgent.AgentCore/         # Agent core runtime
+│   └── NAgent.Shared/            # Shared components
+├── tests/                        # Test projects
+├── skills/                       # Skill Markdown files
+├── tools/                        # Tool YAML configurations
+└── docs/                         # Documentation
+```
 
 ## API Reference
 
@@ -245,6 +271,7 @@ The application uses `appsettings.json` for configuration. Key settings:
 |--------|----------|------|-------------|
 | GET | `/api/skills` | Bearer | List skills |
 | POST | `/api/skills/reload` | Admin | Reload skills |
+| GET | `/api/tools` | Bearer | List tools |
 
 ### Memory
 
@@ -315,6 +342,18 @@ execution:
 - **XSS Prevention**: HTML escaping in frontend
 - **Prompt Injection Filter**: Detects and blocks malicious prompt patterns
 - **Sandbox Execution**: High-risk tools execute in isolated environments
+
+## Disclaimer
+
+### Search Results Usage
+
+NAgent includes built-in web search functionality (Baidu, Bing) for research and educational purposes only. The search results are retrieved programmatically and should be used in compliance with the respective search engines' Terms of Service.
+
+- **Research Purpose Only**: Search results are intended for research, learning, and information gathering purposes.
+- **Not for Bulk Scraping**: This tool is not designed for large-scale data collection, automated scraping, or commercial use.
+- **Respect Rate Limits**: The system implements rate limiting (5-second intervals between searches) to avoid overloading search engine servers.
+- **No Warranty**: The accuracy, completeness, or availability of search results is not guaranteed.
+- **User Responsibility**: Users are responsible for complying with applicable laws and regulations when using search functionality.
 
 ## Contributing
 
