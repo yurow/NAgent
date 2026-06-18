@@ -216,25 +216,45 @@ public class YamlToolExecutor : IToolExecutor
 
         try
         {
-            using var handler = new HttpClientHandler
+            var handler = new HttpClientHandler
             {
                 AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
                 AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 5
+                MaxAutomaticRedirections = 8,
+                // ⭐ 跳过 SSL 证书验证，避免自签名证书/过期证书导致连接失败
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             };
-            using var client = new HttpClient(handler);
-            client.Timeout = TimeSpan.FromSeconds(15);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,*/*;q=0.8");
-            client.DefaultRequestHeaders.AcceptEncoding.ParseAdd("gzip, deflate");
+            var client = new HttpClient(handler);
+            client.Timeout = TimeSpan.FromSeconds(20);
+
+            // ⭐ 完整的浏览器指纹头，避免被反爬拦截 403
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+            client.DefaultRequestHeaders.Add("Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+            client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
+            client.DefaultRequestHeaders.Add("Connection", "keep-alive");
+            client.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
+            // 模拟从百度搜索点进来的
+            client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/");
 
             var response = await client.GetAsync(url, cancellationToken);
+
+            // ⭐ 对于非 200 的状态码，尝试读取内容（有些站点 403 但仍返回内容）
             if (!response.IsSuccessStatusCode)
             {
                 var statusCode = (int)response.StatusCode;
-                _logger.LogWarning("[WebFetch] HTTP {StatusCode} 抓取失败: {Url}", statusCode, url);
-                return ToolExecutionResult.Fail($"HTTP {statusCode} 抓取失败");
+                _logger.LogWarning("[WebFetch] HTTP {StatusCode} 响应: {Url}", statusCode, url);
+
+                // 403/429 等客户端错误直接返回失败
+                if (statusCode == 403 || statusCode == 429 || statusCode == 401)
+                    return ToolExecutionResult.Fail($"HTTP {statusCode} 访问被拒绝（该网站可能有反爬保护）");
+
+                if (statusCode >= 400)
+                    return ToolExecutionResult.Fail($"HTTP {statusCode} 请求失败");
             }
 
             var html = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -256,7 +276,7 @@ public class YamlToolExecutor : IToolExecutor
             var title = titleNode?.InnerText?.Trim() ?? "";
 
             // 尝试提取 article 或 main 标签
-            var mainNode = doc.DocumentNode.SelectSingleNode("//article") 
+            var mainNode = doc.DocumentNode.SelectSingleNode("//article")
                 ?? doc.DocumentNode.SelectSingleNode("//main")
                 ?? doc.DocumentNode.SelectSingleNode("//body");
 
@@ -272,12 +292,20 @@ public class YamlToolExecutor : IToolExecutor
             var output = $"标题: {title}\n来源: {url}\n\n{text}";
 
             _logger.LogInformation("[WebFetch] 抓取成功，文本长度: {Length}", text.Length);
+            handler.Dispose();
+            client.Dispose();
             return ToolExecutionResult.Ok(output);
         }
         catch (TaskCanceledException)
         {
             _logger.LogWarning("[WebFetch] 抓取超时: {Url}", url);
-            return ToolExecutionResult.Fail("抓取超时（15秒）");
+            return ToolExecutionResult.Fail("抓取超时（20秒）");
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+        {
+            // SSL 错误、DNS 错误、连接被拒绝等
+            _logger.LogWarning("[WebFetch] 网络异常: {Url}, {Message}", url, ex.Message);
+            return ToolExecutionResult.Fail($"网络请求失败: {ex.Message}");
         }
         catch (Exception ex)
         {

@@ -347,25 +347,51 @@ public class BaiduWebSearchTool
             if (string.IsNullOrEmpty(realUrl))
                 return null;
 
-            using var handler = new HttpClientHandler
+            var handler = new HttpClientHandler
             {
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
                 AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 5
+                MaxAutomaticRedirections = 8,
+                // ⭐ 跳过 SSL 证书验证
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             };
-            using var client = new HttpClient(handler);
-            client.Timeout = TimeSpan.FromSeconds(10);
+            var client = new HttpClient(handler);
+            client.Timeout = TimeSpan.FromSeconds(15);
 
+            // ⭐ 完整的浏览器指纹头
             var ua = UserAgents[Random.Next(UserAgents.Count)];
+            client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("User-Agent", ua);
-            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,*/*;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
             client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+            client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
+            client.DefaultRequestHeaders.Add("Connection", "keep-alive");
+            client.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
+            client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/");
 
             var response = await client.GetAsync(realUrl, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+
+            // ⭐ 403/429 等反爬拦截，直接返回 null
+            var statusCode = (int)response.StatusCode;
+            if (statusCode == 403 || statusCode == 429 || statusCode == 401)
+            {
+                handler.Dispose();
+                client.Dispose();
                 return null;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                handler.Dispose();
+                client.Dispose();
+                return null;
+            }
 
             var html = await response.Content.ReadAsStringAsync(cancellationToken);
+            handler.Dispose();
+            client.Dispose();
+
             if (string.IsNullOrWhiteSpace(html))
                 return null;
 
@@ -414,20 +440,24 @@ public class BaiduWebSearchTool
 
         try
         {
-            using var handler = new HttpClientHandler
+            var handler = new HttpClientHandler
             {
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
                 AllowAutoRedirect = false,
-                MaxAutomaticRedirections = 1 // 最小值为1，配合 AllowAutoRedirect=false 实际不会重定向
+                MaxAutomaticRedirections = 1,
+                // ⭐ 跳过 SSL 证书验证
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             };
-            using var client = new HttpClient(handler);
+            var client = new HttpClient(handler);
             client.Timeout = TimeSpan.FromSeconds(10);
 
             var ua = UserAgents[Random.Next(UserAgents.Count)];
+            client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("User-Agent", ua);
-            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,*/*;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
             client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/s?wd=test");
-            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9");
+            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
 
             var response = await client.GetAsync(url, cancellationToken);
 
@@ -448,6 +478,9 @@ public class BaiduWebSearchTool
                     return location;
                 }
             }
+
+            handler.Dispose();
+            client.Dispose();
 
             // 如果响应成功（200），可能是直接返回了页面，返回原始URL
             if (response.IsSuccessStatusCode)
