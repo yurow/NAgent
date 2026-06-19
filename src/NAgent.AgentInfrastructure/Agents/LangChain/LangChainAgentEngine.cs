@@ -285,7 +285,7 @@ public class LangChainAgentEngine : IAgentEngine
         string userInput,
         CancellationToken cancellationToken)
     {
-        var prompt = BuildSkillIntentPrompt(session, userInput);
+        var prompt = await BuildSkillIntentPromptAsync(session, userInput);
 
         try
         {
@@ -439,7 +439,7 @@ public class LangChainAgentEngine : IAgentEngine
         string? modelId,
         CancellationToken cancellationToken)
     {
-        var context = BuildContext(session, userInput);
+        var context = await BuildContextAsync(session, userInput);
         return await _llmClient.GenerateAsync(context, modelId, cancellationToken: cancellationToken, systemPrompt: _currentSystemPrompt);
     }
 
@@ -480,9 +480,9 @@ public class LangChainAgentEngine : IAgentEngine
     /// <summary>
     /// 构建 Skill 意图解析 Prompt
     /// </summary>
-    private string BuildSkillIntentPrompt(AgentSession session, string userInput)
+    private async Task<string> BuildSkillIntentPromptAsync(AgentSession session, string userInput)
     {
-        var context = BuildContext(session, userInput);
+        var context = await BuildContextAsync(session, userInput);
         var availableSkills = _skillExecutor.GetAvailableSkillsDescription();
         var jsonExample1 = "{\"skill\": \"file_reader\", \"parameters\": {\"file_path\": \"init.md\"}, \"reasoning\": \"用户想读取init.md文件\"}";
         var jsonExample2 = "{\"skill\": \"\", \"parameters\": {}, \"reasoning\": \"用户只是闲聊，不需要调用Skill\"}";
@@ -522,7 +522,7 @@ public class LangChainAgentEngine : IAgentEngine
     /// <summary>
     /// 构建上下文
     /// </summary>
-    private string BuildContext(AgentSession session, string currentInput)
+    private async Task<string> BuildContextAsync(AgentSession session, string currentInput)
     {
         var recentMessages = session.GetRecentMessages(5);
         var history = string.Join("\n", recentMessages.Select(m => $"{m.Role}: {m.Content}"));
@@ -545,7 +545,7 @@ public class LangChainAgentEngine : IAgentEngine
         try
         {
             var sessionId = Guid.TryParse(session.SessionKey, out var sid) ? sid : session.Id;
-            var shortTermMemories = _memorySystem.GetShortTermMemoryAsync(session.ProjectId, sessionId, 10).GetAwaiter().GetResult();
+            var shortTermMemories = await _memorySystem.GetShortTermMemoryAsync(session.ProjectId, sessionId, 10);
             if (shortTermMemories.Count > 0)
             {
                 sb.AppendLine("【近期对话记忆】");
@@ -557,7 +557,7 @@ public class LangChainAgentEngine : IAgentEngine
                 sb.AppendLine();
             }
 
-            var longTermMemories = _memorySystem.GetLongTermMemoryAsync(session.ProjectId, sessionId, 5).GetAwaiter().GetResult();
+            var longTermMemories = await _memorySystem.GetLongTermMemoryAsync(session.ProjectId, sessionId, 5);
             if (longTermMemories.Count > 0)
             {
                 sb.AppendLine("【长期记忆摘要】");
@@ -570,7 +570,7 @@ public class LangChainAgentEngine : IAgentEngine
                 sb.AppendLine();
             }
 
-            var projectMemorySummaries = _memorySystem.GetProjectMemorySummaryAsync(session.ProjectId, 10).GetAwaiter().GetResult();
+            var projectMemorySummaries = await _memorySystem.GetProjectMemorySummaryAsync(session.ProjectId, 10);
             if (projectMemorySummaries.Count > 0)
             {
                 sb.AppendLine("【项目知识记忆】");
@@ -609,7 +609,7 @@ public class LangChainAgentEngine : IAgentEngine
         // 查询知识图谱，辅助LLM判断
         try
         {
-            var kgResult = _knowledgeGraph.QueryAsync(session.ProjectId.ToString(), currentInput, limit: 10).GetAwaiter().GetResult();
+            var kgResult = await _knowledgeGraph.QueryAsync(session.ProjectId.ToString(), currentInput, limit: 10);
             if (kgResult.HasResults)
             {
                 sb.AppendLine("【项目知识图谱】");

@@ -254,9 +254,9 @@ public class AgentController : ControllerBase
                 await _memorySystem.AddMemoryAsync(projectId, sessionId, "user", request.UserInput, new Dictionary<string, object> { ["projectId"] = projectId.ToString() }, cancellationToken);
                 await _memorySystem.AddMemoryAsync(projectId, sessionId, "assistant", output, new Dictionary<string, object> { ["projectId"] = projectId.ToString(), ["model"] = request.ModelId ?? "default" }, cancellationToken);
             }
-            catch
+            catch (Exception ex)
             {
-                // 记忆写入失败不影响主流程
+                _logger?.LogWarning(ex, "记忆写入失败");
             }
 
             await Response.WriteAsync("data: [DONE]\n\n", cancellationToken);
@@ -329,9 +329,9 @@ public class AgentController : ControllerBase
 
             _workspaceManager.SaveChatHistory(userId, projectId, sessionKey, trimmed);
         }
-        catch
+        catch (Exception ex)
         {
-            // 保存失败不影响主流程
+            _logger?.LogWarning(ex, "保存对话历史失败");
         }
     }
 
@@ -453,10 +453,25 @@ public class AgentController : ControllerBase
 
         // 保存文件到工作目录
         var workspacePath = _workspaceManager.EnsureProjectWorkspace(userId, projectIdGuid);
-        var filePath = Path.Combine(workspacePath, file.FileName);
 
-        // 防止路径遍历
-        if (!filePath.StartsWith(workspacePath))
+        // 安全校验：文件名不能包含路径遍历字符
+        var fileName = Path.GetFileName(file.FileName);
+        if (string.IsNullOrEmpty(fileName) || fileName != file.FileName)
+            return BadRequest(ApiResponse.FailureResponse("非法文件名"));
+
+        // 白名单校验文件扩展名
+        var allowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { ".txt", ".md", ".json", ".yaml", ".yml", ".cs", ".py", ".js", ".html", ".xml", ".ts", ".css", ".sql", ".sh", ".bat", ".csv" };
+        var ext = Path.GetExtension(fileName);
+        if (!allowedExtensions.Contains(ext))
+            return BadRequest(ApiResponse.FailureResponse($"不支持的文件类型: {ext}"));
+
+        var filePath = Path.Combine(workspacePath, fileName);
+
+        // 防止路径遍历（使用 GetFullPath 规范化路径后再比较）
+        var fullPath = Path.GetFullPath(filePath);
+        var fullWorkspacePath = Path.GetFullPath(workspacePath) + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(fullWorkspacePath))
             return BadRequest(ApiResponse.FailureResponse("非法文件路径"));
 
         using (var stream = new FileStream(filePath, FileMode.Create))
@@ -605,9 +620,9 @@ public class AgentController : ControllerBase
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // 工具预执行失败不影响主流程
+            _logger?.LogWarning(ex, "工具预执行失败");
         }
 
         return results;

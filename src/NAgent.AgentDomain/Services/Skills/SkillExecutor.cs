@@ -13,6 +13,8 @@ public class SkillExecutor : ISkillExecutor
 {
     private readonly ISkillRepository _skillRepository;
     private readonly IToolRegistry _toolRegistry;
+    private string? _cachedSkillsDescription;
+    private DateTime _cacheExpiresAt = DateTime.MinValue;
 
     public SkillExecutor(ISkillRepository skillRepository, IToolRegistry toolRegistry)
     {
@@ -22,6 +24,10 @@ public class SkillExecutor : ISkillExecutor
 
     public string GetAvailableSkillsDescription()
     {
+        // 使用 30 秒缓存，减少数据库查询
+        if (_cachedSkillsDescription != null && DateTime.UtcNow < _cacheExpiresAt)
+            return _cachedSkillsDescription;
+
         var skills = _skillRepository.GetAllAsync(CancellationToken.None).GetAwaiter().GetResult();
         var lines = new List<string>();
         foreach (var skill in skills.Where(s => s.IsEnabled))
@@ -42,7 +48,10 @@ public class SkillExecutor : ISkillExecutor
                 }
             }
         }
-        return string.Join("\n", lines);
+
+        _cachedSkillsDescription = string.Join("\n", lines);
+        _cacheExpiresAt = DateTime.UtcNow.AddSeconds(30);
+        return _cachedSkillsDescription;
     }
 
     /// <summary>

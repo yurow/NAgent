@@ -65,8 +65,8 @@ public static class DependencyInjection
             return new WorkspaceManager(workspacePath);
         });
 
-        // 注册密码哈希服务（Singleton）
-        services.AddSingleton<IPasswordHasher, Sha256PasswordHasher>();
+        // 注册密码哈希服务（Singleton）- 使用 BCrypt 替代不安全的 SHA256
+        services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 
         return services;
     }
