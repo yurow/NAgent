@@ -236,6 +236,7 @@ function renderProjectList(projects) {
                 </div>
                 <div class="project-card-footer">
                     <button class="btn-primary" onclick="chatWithProject('${project.id}', '${escapeHtml(project.name)}')">💬 聊天</button>
+                    <button class="btn-secondary" onclick="openRoleModal('${project.id}', '${escapeHtml(project.name)}')">🎭 角色</button>
                     <button class="btn-secondary" onclick="viewProjectMemory('${project.id}', '${escapeHtml(project.name)}')">🧠 查看记忆</button>
                     ${isAdmin ? `<button class="btn-danger" onclick="deleteProjectWithConfirm('${project.id}', '${escapeHtml(project.name)}')">🗑️ 删除</button>` : ''}
                 </div>
@@ -2156,5 +2157,203 @@ function viewModelStats(modelId) {
         error: function() {
             alert('加载使用统计失败');
         }
+    });
+}
+
+// ===== 角色管理 =====
+let currentRoleProjectId = null;
+let currentRoleProjectName = '';
+
+function getAuthHeaders() {
+    const token = localStorage.getItem('jwt_token');
+    return { 'Authorization': `Bearer ${token}` };
+}
+
+function openRoleModal(projectId, projectName) {
+    currentRoleProjectId = projectId;
+    currentRoleProjectName = projectName;
+    $('#roleProjectName').text(`项目: ${projectName}`);
+    $('#roleModal').fadeIn(200);
+    loadRoles(projectId);
+}
+
+function closeRoleModal() {
+    $('#roleModal').fadeOut(200);
+    currentRoleProjectId = null;
+    currentRoleProjectName = '';
+}
+
+function loadRoles(projectId) {
+    $.ajax({
+        url: `/api/projects/${projectId}/roles`,
+        method: 'GET',
+        headers: getAuthHeaders(),
+        success: function(response) {
+            renderRoleList(response.data || []);
+        },
+        error: function() {
+            $('#roleListContainer').html('<p>加载角色列表失败</p>');
+        }
+    });
+}
+
+function renderRoleList(roles) {
+    const container = $('#roleListContainer');
+    if (roles.length === 0) {
+        container.html(`
+            <div class="empty-state" style="padding: 30px; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 12px;">🎭</div>
+                <h3>还没有角色</h3>
+                <p>添加角色来定义不同的 AI 人设和 System Prompt</p>
+            </div>
+        `);
+        return;
+    }
+
+    let html = '';
+    roles.forEach(role => {
+        const activeClass = role.isActive ? 'role-active' : '';
+        const activeLabel = role.isActive ? '✅ 当前激活' : '';
+        const promptPreview = role.systemPrompt.length > 100 
+            ? escapeHtml(role.systemPrompt.substring(0, 100)) + '...' 
+            : escapeHtml(role.systemPrompt);
+        html += `
+            <div class="role-card ${activeClass}">
+                <div class="role-card-header">
+                    <h4>${escapeHtml(role.name)}</h4>
+                    ${activeLabel ? `<span class="role-active-badge">${activeLabel}</span>` : ''}
+                </div>
+                <div class="role-card-body">
+                    <p class="role-desc">${escapeHtml(role.description || '暂无描述')}</p>
+                    <div class="role-prompt-preview">${promptPreview}</div>
+                    <div class="role-meta">
+                        <span>🤖 模型: ${role.modelId ? '已绑定' : '默认'}</span>
+                    </div>
+                </div>
+                <div class="role-card-footer">
+                    ${!role.isActive ? `<button class="btn-primary btn-sm" onclick="activateRole('${currentRoleProjectId}', '${role.id}')">✅ 激活</button>` : `<button class="btn-secondary btn-sm" onclick="deactivateRole('${currentRoleProjectId}')">❌ 取消激活</button>`}
+                    <button class="btn-secondary btn-sm" onclick="editRole('${currentRoleProjectId}', '${role.id}')">✏️ 编辑</button>
+                    <button class="btn-danger btn-sm" onclick="deleteRoleWithConfirm('${currentRoleProjectId}', '${role.id}', '${escapeHtml(role.name)}')">🗑️ 删除</button>
+                </div>
+            </div>
+        `;
+    });
+    container.html(html);
+}
+
+function openRoleForm(roleId) {
+    $('#roleFormTitle').text(roleId ? '编辑角色' : '添加角色');
+    $('#editRoleId').val(roleId || '');
+    $('#editRoleProjectId').val(currentRoleProjectId);
+    
+    if (roleId) {
+        $.ajax({
+            url: `/api/projects/${currentRoleProjectId}/roles/${roleId}`,
+            method: 'GET',
+            headers: getAuthHeaders(),
+            success: function(response) {
+                const role = response.data;
+                $('#roleName').val(role.name);
+                $('#roleDescription').val(role.description);
+                $('#roleSystemPrompt').val(role.systemPrompt);
+                loadModelsForRoleForm(role.modelId);
+            },
+            error: function() { alert('加载角色数据失败'); }
+        });
+    } else {
+        $('#roleName').val('');
+        $('#roleDescription').val('');
+        $('#roleSystemPrompt').val('');
+        loadModelsForRoleForm(null);
+    }
+    $('#roleFormModal').fadeIn(200);
+}
+
+function loadModelsForRoleForm(selectedModelId) {
+    const select = $('#roleModelId');
+    select.html('<option value="">使用项目默认模型</option>');
+    $.ajax({
+        url: '/api/llm/models',
+        method: 'GET',
+        headers: getAuthHeaders(),
+        success: function(response) {
+            (response.data || []).forEach(m => {
+                const selected = m.id === selectedModelId ? 'selected' : '';
+                select.append(`<option value="${m.id}" ${selected}>${m.displayName} (${m.providerName})</option>`);
+            });
+        }
+    });
+}
+
+function closeRoleFormModal() {
+    $('#roleFormModal').fadeOut(200);
+}
+
+function editRole(projectId, roleId) {
+    currentRoleProjectId = projectId;
+    openRoleForm(roleId);
+}
+
+$(document).on('submit', '#roleForm', function(e) {
+    e.preventDefault();
+    const projectId = $('#editRoleProjectId').val();
+    const roleId = $('#editRoleId').val();
+    const data = {
+        name: $('#roleName').val(),
+        description: $('#roleDescription').val(),
+        systemPrompt: $('#roleSystemPrompt').val(),
+        modelId: $('#roleModelId').val() || null
+    };
+
+    const isEdit = !!roleId;
+    const url = isEdit
+        ? `/api/projects/${projectId}/roles/${roleId}`
+        : `/api/projects/${projectId}/roles`;
+    const method = isEdit ? 'PUT' : 'POST';
+
+    $.ajax({
+        url: url,
+        method: method,
+        headers: getAuthHeaders(),
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function() {
+            closeRoleFormModal();
+            loadRoles(projectId);
+        },
+        error: function(xhr) {
+            alert((isEdit ? '更新' : '创建') + '角色失败: ' + (xhr.responseJSON?.message || ''));
+        }
+    });
+});
+
+function activateRole(projectId, roleId) {
+    $.ajax({
+        url: `/api/projects/${projectId}/roles/${roleId}/activate`,
+        method: 'POST',
+        headers: getAuthHeaders(),
+        success: function() { loadRoles(projectId); },
+        error: function() { alert('激活角色失败'); }
+    });
+}
+
+function deactivateRole(projectId) {
+    $.ajax({
+        url: `/api/projects/${projectId}/roles/deactivate`,
+        method: 'POST',
+        headers: getAuthHeaders(),
+        success: function() { loadRoles(projectId); },
+        error: function() { alert('取消激活角色失败'); }
+    });
+}
+
+function deleteRoleWithConfirm(projectId, roleId, roleName) {
+    if (!confirm(`确定要删除角色「${roleName}」吗？`)) return;
+    $.ajax({
+        url: `/api/projects/${projectId}/roles/${roleId}`,
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        success: function() { loadRoles(projectId); },
+        error: function() { alert('删除角色失败'); }
     });
 }

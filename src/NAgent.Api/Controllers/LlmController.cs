@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NAgent.AgentApplication.DTOs;
 using NAgent.AgentApplication.Features.ManageLlm.Commands;
@@ -12,6 +13,7 @@ namespace NAgent.Api.Controllers;
 /// LLM 模型管理控制器
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 [Tags("LLM Management")]
 public class LlmController : ControllerBase

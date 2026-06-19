@@ -90,34 +90,28 @@ public class BaiduWebSearchTool
         var encodedQuery = Uri.EscapeDataString(query);
         var url = $"https://www.baidu.com/s?wd={encodedQuery}&rn={maxResults * 2}&ie=utf-8";
 
-        using var handler = new HttpClientHandler
-        {
-            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 5
-        };
-
-        using var client = new HttpClient(handler);
-        client.Timeout = TimeSpan.FromSeconds(30);
+        // ⭐ 复用全局共享 HttpClient，避免每次搜索创建/销毁 Handler 导致内存泄漏和端口耗尽
+        var client = HttpClientManager.Default;
+        using var cts = HttpClientManager.CreateTimeoutCts(TimeSpan.FromSeconds(30), cancellationToken);
 
         var ua = UserAgents[Random.Next(UserAgents.Count)];
-        client.DefaultRequestHeaders.Add("User-Agent", ua);
-        client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-        client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
-        // ⭐ 不请求 br(Brotli)，因为 AutomaticDecompression 不支持 Brotli 自动解压
-        client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
-        client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/");
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("User-Agent", ua);
+        request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        // ⭐ 不手动添加 Accept-Encoding：HttpClientHandler.AutomaticDecompression 自动处理
+        request.Headers.TryAddWithoutValidation("Referer", "https://www.baidu.com/");
 
-        var response = await client.GetAsync(url, cancellationToken);
+        var response = await client.SendAsync(request, cts.Token);
         response.EnsureSuccessStatusCode();
 
         // ⭐ 使用 ReadAsStringAsync 让 HttpClient 自动处理编码
-        var html = await response.Content.ReadAsStringAsync(cancellationToken);
+        var html = await response.Content.ReadAsStringAsync(cts.Token);
 
         // 如果 ReadAsString 结果仍是乱码，尝试手动检测
         if (ContainsGarbledText(html))
         {
-            var bytes = await client.GetByteArrayAsync(url, cancellationToken);
+            var bytes = await client.GetByteArrayAsync(url, cts.Token);
             html = DecodeWithMetaCharset(bytes) ?? Encoding.UTF8.GetString(bytes);
         }
 
@@ -347,50 +341,26 @@ public class BaiduWebSearchTool
             if (string.IsNullOrEmpty(realUrl))
                 return null;
 
-            var handler = new HttpClientHandler
-            {
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 8,
-                // ⭐ 跳过 SSL 证书验证
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            };
-            var client = new HttpClient(handler);
-            client.Timeout = TimeSpan.FromSeconds(15);
+            // ⭐ 复用全局共享 HttpClient（SSL绕过 + 自动重定向），避免每次请求创建/销毁 Handler
+            var client = HttpClientManager.WebScraper;
+            using var cts = HttpClientManager.CreateTimeoutCts(TimeSpan.FromSeconds(15), cancellationToken);
 
-            // ⭐ 完整的浏览器指纹头
+            // ⭐ 每个请求独立设置浏览器指纹头，线程安全
             var ua = UserAgents[Random.Next(UserAgents.Count)];
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("User-Agent", ua);
-            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
-            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
-            client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
-            client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
-            client.DefaultRequestHeaders.Add("Connection", "keep-alive");
-            client.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
-            client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/");
+            using var request = new HttpRequestMessage(HttpMethod.Get, realUrl);
+            HttpClientManager.SetBrowserHeaders(request, userAgent: ua);
 
-            var response = await client.GetAsync(realUrl, cancellationToken);
+            var response = await client.SendAsync(request, cts.Token);
 
             // ⭐ 403/429 等反爬拦截，直接返回 null
             var statusCode = (int)response.StatusCode;
             if (statusCode == 403 || statusCode == 429 || statusCode == 401)
-            {
-                handler.Dispose();
-                client.Dispose();
                 return null;
-            }
 
             if (!response.IsSuccessStatusCode)
-            {
-                handler.Dispose();
-                client.Dispose();
                 return null;
-            }
 
-            var html = await response.Content.ReadAsStringAsync(cancellationToken);
-            handler.Dispose();
-            client.Dispose();
+            var html = await response.Content.ReadAsStringAsync(cts.Token);
 
             if (string.IsNullOrWhiteSpace(html))
                 return null;
@@ -440,26 +410,18 @@ public class BaiduWebSearchTool
 
         try
         {
-            var handler = new HttpClientHandler
-            {
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-                AllowAutoRedirect = false,
-                MaxAutomaticRedirections = 1,
-                // ⭐ 跳过 SSL 证书验证
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            };
-            var client = new HttpClient(handler);
-            client.Timeout = TimeSpan.FromSeconds(10);
+            // ⭐ 复用全局共享 RedirectResolver（SSL绕过 + 不跟随重定向），避免内存泄漏
+            var client = HttpClientManager.RedirectResolver;
+            using var cts = HttpClientManager.CreateTimeoutCts(TimeSpan.FromSeconds(10), cancellationToken);
 
             var ua = UserAgents[Random.Next(UserAgents.Count)];
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("User-Agent", ua);
-            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-            client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/s?wd=test");
-            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
-            client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("User-Agent", ua);
+            request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            request.Headers.TryAddWithoutValidation("Referer", "https://www.baidu.com/s?wd=test");
+            request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
 
-            var response = await client.GetAsync(url, cancellationToken);
+            var response = await client.SendAsync(request, cts.Token);
 
             // 301/302 重定向
             if (response.StatusCode == System.Net.HttpStatusCode.MovedPermanently ||
@@ -478,9 +440,6 @@ public class BaiduWebSearchTool
                     return location;
                 }
             }
-
-            handler.Dispose();
-            client.Dispose();
 
             // 如果响应成功（200），可能是直接返回了页面，返回原始URL
             if (response.IsSuccessStatusCode)

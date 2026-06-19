@@ -20,14 +20,21 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    });
 
 // ⭐ 添加内存缓存服务
 builder.Services.AddMemoryCache();
 
 // ⭐ 配置 JWT 认证服务
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey 未配置");
+// 优先从环境变量读取 SecretKey，其次从配置读取
+var secretKey = Environment.GetEnvironmentVariable("NAGENT_JWT_SECRET_KEY")
+    ?? jwtSettings["SecretKey"]
+    ?? throw new InvalidOperationException("JWT SecretKey 未配置。请设置环境变量 NAGENT_JWT_SECRET_KEY 或在配置中指定。");
 var issuer = jwtSettings["Issuer"] ?? "NAgent";
 var audience = jwtSettings["Audience"] ?? "NAgent.Api";
 

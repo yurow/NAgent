@@ -247,6 +247,63 @@
                 </div>
             </div>
 
+            <!-- 角色管理模态框 -->
+            <div id="roleModal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 800px; width: 90%;">
+                    <div class="modal-header">
+                        <h3 id="roleModalTitle">角色管理</h3>
+                        <span class="close-btn" onclick="closeRoleModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <span id="roleProjectName" style="font-weight: 600;"></span>
+                            <button class="btn-primary" onclick="openRoleForm()">➕ 添加角色</button>
+                        </div>
+                        <div id="roleListContainer" class="role-list-container">
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 角色编辑表单模态框 -->
+            <div id="roleFormModal" class="modal" style="display: none;">
+                <div class="modal-content" style="max-width: 700px;">
+                    <div class="modal-header">
+                        <h3 id="roleFormTitle">添加角色</h3>
+                        <span class="close-btn" onclick="closeRoleFormModal()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <form id="roleForm">
+                            <input type="hidden" id="editRoleId" />
+                            <input type="hidden" id="editRoleProjectId" />
+                            <div class="form-group">
+                                <label for="roleName">角色名称 *</label>
+                                <input type="text" id="roleName" required placeholder="例如：写手、校对员、架构师" />
+                            </div>
+                            <div class="form-group">
+                                <label for="roleDescription">角色描述</label>
+                                <input type="text" id="roleDescription" placeholder="角色的简要描述" />
+                            </div>
+                            <div class="form-group">
+                                <label for="roleSystemPrompt">System Prompt *</label>
+                                <textarea id="roleSystemPrompt" rows="8" required placeholder="定义该角色的行为、语气、专业能力..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="roleModelId">绑定模型 (可选)</label>
+                                <select id="roleModelId">
+                                    <option value="">使用项目默认模型</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary">保存</button>
+                                <button type="button" class="btn-secondary" onclick="closeRoleFormModal()">取消</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
             <!-- 添加/编辑项目模态框 -->
             <div id="projectModal" class="modal" style="display: none;">
                 <div class="modal-content">

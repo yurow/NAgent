@@ -23,7 +23,8 @@ public class LocalLlmClientImpl : ILlmClient
         string? modelId = null,
         double temperature = 0.7,
         int maxTokens = 2048,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? systemPrompt = null)
     {
         // TODO: 使用 LLamaSharp 生成文本
         await Task.Delay(100, cancellationToken);
@@ -35,7 +36,8 @@ public class LocalLlmClientImpl : ILlmClient
         string? modelId = null,
         double temperature = 0.7,
         int maxTokens = 2048,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default,
+        string? systemPrompt = null)
     {
         // TODO: 实现流式生成
         yield return "流式";

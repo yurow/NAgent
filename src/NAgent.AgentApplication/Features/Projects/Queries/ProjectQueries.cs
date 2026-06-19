@@ -46,6 +46,7 @@ public class ProjectDto
     public Guid UserId { get; set; }
     public string WorkspacePath { get; set; }
     public bool IsActive { get; set; }
+    public Guid? ActiveRoleId { get; set; }
     public DateTime? LastAccessedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

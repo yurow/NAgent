@@ -18,7 +18,8 @@ public interface ILlmClient
         string? modelId = null,
         double temperature = 0.7,
         int maxTokens = 2048,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? systemPrompt = null);
 
     /// <summary>
     /// 流式生成文本
@@ -33,7 +34,8 @@ public interface ILlmClient
         string? modelId = null,
         double temperature = 0.7,
         int maxTokens = 2048,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? systemPrompt = null);
 
     /// <summary>
     /// 获取可用的模型列表

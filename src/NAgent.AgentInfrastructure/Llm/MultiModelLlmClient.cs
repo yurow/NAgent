@@ -5,6 +5,7 @@ using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
 using NAgent.AgentDomain.Enums;
 using NAgent.AgentDomain.Services;
+using NAgent.AgentDomain.Services.Tools;
 
 namespace NAgent.AgentInfrastructure.Llm;
 
@@ -19,7 +20,8 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
     public MultiModelLlmClient(LlmModelCacheService cacheService)
     {
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
-        _httpClient = new HttpClient();
+        // ⭐ 复用全局共享 HttpClient，避免每个 Scoped 实例创建独立 Handler 导致内存泄漏
+        _httpClient = HttpClientManager.Default;
     }
 
     public async Task<string> GenerateAsync(
@@ -27,14 +29,15 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         string? modelId = null,
         double temperature = 0.7,
         int maxTokens = 2048,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? systemPrompt = null)
     {
         var (provider, model) = await ResolveModelAsync(modelId, cancellationToken);
 
         return provider.ProtocolType switch
         {
-            LlmProtocolType.OpenAI => await CallOpenAiApiAsync(provider, model, prompt, temperature, maxTokens, cancellationToken),
-            LlmProtocolType.Anthropic => await CallAnthropicApiAsync(provider, model, prompt, temperature, maxTokens, cancellationToken),
+            LlmProtocolType.OpenAI => await CallOpenAiApiAsync(provider, model, prompt, temperature, maxTokens, cancellationToken, systemPrompt),
+            LlmProtocolType.Anthropic => await CallAnthropicApiAsync(provider, model, prompt, temperature, maxTokens, cancellationToken, systemPrompt),
             _ => throw new NotSupportedException($"不支持的协议类型: {provider.ProtocolType}")
         };
     }
@@ -44,14 +47,15 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         string? modelId = null,
         double temperature = 0.7,
         int maxTokens = 2048,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default,
+        string? systemPrompt = null)
     {
         var (provider, model) = await ResolveModelAsync(modelId, cancellationToken);
 
         var stream = provider.ProtocolType switch
         {
-            LlmProtocolType.OpenAI => CallOpenAiStreamAsync(provider, model, prompt, temperature, maxTokens, cancellationToken),
-            LlmProtocolType.Anthropic => CallAnthropicStreamAsync(provider, model, prompt, temperature, maxTokens, cancellationToken),
+            LlmProtocolType.OpenAI => CallOpenAiStreamAsync(provider, model, prompt, temperature, maxTokens, cancellationToken, systemPrompt),
+            LlmProtocolType.Anthropic => CallAnthropicStreamAsync(provider, model, prompt, temperature, maxTokens, cancellationToken, systemPrompt),
             _ => throw new NotSupportedException($"不支持的协议类型: {provider.ProtocolType}")
         };
 
@@ -96,7 +100,7 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
 
     public void Dispose()
     {
-        _httpClient.Dispose();
+        // ⭐ 不 Dispose 共享 HttpClient，它由 HttpClientManager 全局管理
     }
 
     #region Private Methods
@@ -136,15 +140,18 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         string prompt,
         double temperature,
         int maxTokens,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? systemPrompt = null)
     {
+        var messages = new List<object>();
+        if (!string.IsNullOrEmpty(systemPrompt))
+            messages.Add(new { role = "system", content = systemPrompt });
+        messages.Add(new { role = "user", content = prompt });
+
         var request = new
         {
             model = model.ModelId,
-            messages = new[]
-            {
-                new { role = "user", content = prompt }
-            },
+            messages = messages.ToArray(),
             temperature = temperature,
             max_tokens = Math.Min(maxTokens, model.MaxOutputTokens)
         };
@@ -182,20 +189,20 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         string prompt,
         double temperature,
         int maxTokens,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? systemPrompt = null)
     {
-        var request = new
+        var requestBody = new Dictionary<string, object>
         {
-            model = model.ModelId,
-            messages = new[]
-            {
-                new { role = "user", content = prompt }
-            },
-            temperature = temperature,
-            max_tokens = Math.Min(maxTokens, model.MaxOutputTokens)
+            ["model"] = model.ModelId,
+            ["messages"] = new[] { new { role = "user", content = prompt } },
+            ["temperature"] = temperature,
+            ["max_tokens"] = Math.Min(maxTokens, model.MaxOutputTokens)
         };
+        if (!string.IsNullOrEmpty(systemPrompt))
+            requestBody["system"] = systemPrompt;
 
-        var json = JsonSerializer.Serialize(request);
+        var json = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         var url = $"{provider.BaseUrl.TrimEnd('/')}/v1/messages";
@@ -227,15 +234,18 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         string prompt,
         double temperature,
         int maxTokens,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+        string? systemPrompt = null)
     {
+        var messages = new List<object>();
+        if (!string.IsNullOrEmpty(systemPrompt))
+            messages.Add(new { role = "system", content = systemPrompt });
+        messages.Add(new { role = "user", content = prompt });
+
         var request = new
         {
             model = model.ModelId,
-            messages = new[]
-            {
-                new { role = "user", content = prompt }
-            },
+            messages = messages.ToArray(),
             temperature = temperature,
             max_tokens = Math.Min(maxTokens, model.MaxOutputTokens),
             stream = true
@@ -310,21 +320,21 @@ public class MultiModelLlmClient : ILlmClient, IDisposable
         string prompt,
         double temperature,
         int maxTokens,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+        string? systemPrompt = null)
     {
-        var request = new
+        var requestBody = new Dictionary<string, object>
         {
-            model = model.ModelId,
-            messages = new[]
-            {
-                new { role = "user", content = prompt }
-            },
-            temperature = temperature,
-            max_tokens = Math.Min(maxTokens, model.MaxOutputTokens),
-            stream = true
+            ["model"] = model.ModelId,
+            ["messages"] = new[] { new { role = "user", content = prompt } },
+            ["temperature"] = temperature,
+            ["max_tokens"] = Math.Min(maxTokens, model.MaxOutputTokens),
+            ["stream"] = true
         };
+        if (!string.IsNullOrEmpty(systemPrompt))
+            requestBody["system"] = systemPrompt;
 
-        var json = JsonSerializer.Serialize(request);
+        var json = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         var url = $"{provider.BaseUrl.TrimEnd('/')}/v1/messages";

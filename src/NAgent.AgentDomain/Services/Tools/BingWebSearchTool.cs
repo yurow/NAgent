@@ -94,23 +94,18 @@ public class BingWebSearchTool
         var encodedQuery = Uri.EscapeDataString(query);
         var url = $"https://www.bing.com/search?q={encodedQuery}&count={maxResults * 2}&setlang=zh-Hans";
 
-        using var handler = new HttpClientHandler
-        {
-            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
-            AllowAutoRedirect = true,
-            MaxAutomaticRedirections = 5
-        };
-
-        using var client = new HttpClient(handler);
-        client.Timeout = TimeSpan.FromSeconds(30);
+        // ⭐ 复用全局共享 HttpClient，避免每次搜索创建/销毁 Handler 导致内存泄漏和端口耗尽
+        var client = HttpClientManager.Default;
+        using var cts = HttpClientManager.CreateTimeoutCts(TimeSpan.FromSeconds(30), cancellationToken);
 
         var ua = UserAgents[Random.Next(UserAgents.Count)];
-        client.DefaultRequestHeaders.Add("User-Agent", ua);
-        client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-        client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
-        client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("User-Agent", ua);
+        request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        // ⭐ 不手动添加 Accept-Encoding：HttpClientHandler.AutomaticDecompression 自动处理
 
-        var response = await client.GetAsync(url, cancellationToken);
+        var response = await client.SendAsync(request, cts.Token);
         response.EnsureSuccessStatusCode();
 
         // Bing 始终使用 UTF-8

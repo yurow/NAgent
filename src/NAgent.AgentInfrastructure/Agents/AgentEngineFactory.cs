@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using NAgent.AgentApplication.Interfaces;
+using NAgent.AgentDomain.Repositories;
 using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Skills;
 using NAgent.AgentDomain.Services.Tools;
@@ -50,8 +51,10 @@ public class AgentEngineFactory
         var skillExecutor = serviceProvider.GetRequiredService<ISkillExecutor>();
         var memorySystem = serviceProvider.GetRequiredService<IMemorySystem>();
         var knowledgeGraph = serviceProvider.GetRequiredService<NAgent.AgentDomain.Services.KnowledgeGraph.IKnowledgeGraphService>();
+        var roleRepository = serviceProvider.GetRequiredService<IAgentRoleRepository>();
+        var projectRepository = serviceProvider.GetRequiredService<IProjectRepository>();
         var logger = serviceProvider.GetService<Microsoft.Extensions.Logging.ILogger<LangChainAgentEngine>>();
-        return new LangChainAgentEngine(llmClient, toolRegistry, skillExecutor, memorySystem, knowledgeGraph, logger);
+        return new LangChainAgentEngine(llmClient, toolRegistry, skillExecutor, memorySystem, knowledgeGraph, roleRepository, projectRepository, logger);
     }
 
     private IAgentEngine CreateSemanticKernelEngine(IServiceProvider serviceProvider)

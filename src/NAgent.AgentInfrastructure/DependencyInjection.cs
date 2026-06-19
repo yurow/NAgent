@@ -51,6 +51,9 @@ public static class DependencyInjection
         services.AddScoped<ILlmModelRepository, SqliteLlmModelRepository>();
         services.AddSingleton<ILlmModelDailyUsageRepository, InMemoryLlmModelDailyUsageRepository>();
 
+        // ⭐ 注册角色仓储（SQLite 持久化 + 内存缓存）
+        services.AddScoped<IAgentRoleRepository, SqliteAgentRoleRepository>();
+
         // ⭐ 注册 LLM 模型缓存服务（领域服务层）
         services.AddScoped<LlmModelCacheService>();
 

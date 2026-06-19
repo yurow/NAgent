@@ -26,6 +26,9 @@ public class Project
     [SugarColumn(ColumnName = "is_active", IsNullable = false)]
     public bool IsActive { get; set; }
 
+    [SugarColumn(ColumnName = "active_role_id", IsNullable = true)]
+    public Guid? ActiveRoleId { get; set; }
+
     [SugarColumn(ColumnName = "last_accessed_at", IsNullable = true)]
     public DateTime? LastAccessedAt { get; set; }
 
@@ -93,6 +96,12 @@ public class Project
     public void UpdateLastAccessed()
     {
         LastAccessedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetActiveRole(Guid? roleId)
+    {
+        ActiveRoleId = roleId;
         UpdatedAt = DateTime.UtcNow;
     }
 

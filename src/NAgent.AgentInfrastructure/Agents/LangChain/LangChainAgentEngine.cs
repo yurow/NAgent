@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NAgent.AgentApplication.Interfaces;
 using NAgent.AgentDomain.Entities;
+using NAgent.AgentDomain.Repositories;
 using NAgent.AgentDomain.Services.KnowledgeGraph;
 using NAgent.AgentDomain.Services.Memory;
 using NAgent.AgentDomain.Services.Skills;
@@ -21,6 +22,8 @@ public class LangChainAgentEngine : IAgentEngine
     private readonly ISkillExecutor _skillExecutor;
     private readonly IMemorySystem _memorySystem;
     private readonly IKnowledgeGraphService _knowledgeGraph;
+    private readonly IAgentRoleRepository _roleRepository;
+    private readonly IProjectRepository _projectRepository;
     private readonly ILogger<LangChainAgentEngine>? _logger;
 
     /// <summary>
@@ -34,6 +37,8 @@ public class LangChainAgentEngine : IAgentEngine
         ISkillExecutor skillExecutor,
         IMemorySystem memorySystem,
         IKnowledgeGraphService knowledgeGraph,
+        IAgentRoleRepository roleRepository,
+        IProjectRepository projectRepository,
         ILogger<LangChainAgentEngine>? logger = null)
     {
         _llmClient = llmClient ?? throw new ArgumentNullException(nameof(llmClient));
@@ -41,6 +46,8 @@ public class LangChainAgentEngine : IAgentEngine
         _skillExecutor = skillExecutor ?? throw new ArgumentNullException(nameof(skillExecutor));
         _memorySystem = memorySystem ?? throw new ArgumentNullException(nameof(memorySystem));
         _knowledgeGraph = knowledgeGraph ?? throw new ArgumentNullException(nameof(knowledgeGraph));
+        _roleRepository = roleRepository ?? throw new ArgumentNullException(nameof(roleRepository));
+        _projectRepository = projectRepository ?? throw new ArgumentNullException(nameof(projectRepository));
         _logger = logger;
     }
 
@@ -55,6 +62,11 @@ public class LangChainAgentEngine : IAgentEngine
         try
         {
             Emit("info", "执行开始", $"用户输入: {userInput}");
+
+            // 解析角色 System Prompt
+            _currentSystemPrompt = await ResolveSystemPromptAsync(session.ProjectId, cancellationToken);
+            if (!string.IsNullOrEmpty(_currentSystemPrompt))
+                Emit("role", "角色已激活", $"System Prompt 已加载");
 
             // 1. 解析意图 - 模型选择 Skill
             var intent = await ParseSkillIntentAsync(session, userInput, cancellationToken);
@@ -88,6 +100,7 @@ public class LangChainAgentEngine : IAgentEngine
     /// 发出调试事件
     /// </summary>
     private Action<DebugEvent>? _debug;
+    private string? _currentSystemPrompt;
     private void Emit(string type, string title, string content = "", long durationMs = 0, string status = "info")
     {
         _debug?.Invoke(new DebugEvent
@@ -98,6 +111,25 @@ public class LangChainAgentEngine : IAgentEngine
             DurationMs = durationMs,
             Status = status
         });
+    }
+
+    /// <summary>
+    /// 解析当前项目的激活角色 System Prompt
+    /// </summary>
+    private async Task<string?> ResolveSystemPromptAsync(Guid projectId, CancellationToken ct)
+    {
+        try
+        {
+            var project = await _projectRepository.GetByIdAsync(projectId, ct);
+            if (project?.ActiveRoleId == null) return null;
+            var role = await _roleRepository.GetByIdAsync(project.ActiveRoleId.Value, ct);
+            return role?.SystemPrompt;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "解析角色 System Prompt 失败");
+            return null;
+        }
     }
 
     /// <summary>
@@ -257,7 +289,7 @@ public class LangChainAgentEngine : IAgentEngine
 
         try
         {
-            var response = await _llmClient.GenerateAsync(prompt, cancellationToken: cancellationToken);
+            var response = await _llmClient.GenerateAsync(prompt, cancellationToken: cancellationToken, systemPrompt: _currentSystemPrompt);
 
             var json = ExtractJson(response);
             if (!string.IsNullOrEmpty(json))
@@ -314,7 +346,11 @@ public class LangChainAgentEngine : IAgentEngine
             ? $"\n搜索结果中可抓取的 URL:\n{string.Join("\n", availableUrls.Select((u, i) => $"  {i + 1}. {u}"))}"
             : "\n搜索结果中未找到可抓取的 URL。";
 
-        var prompt = $@"你是 NAgent AI 研究助手。你已经执行了搜索，现在需要决定下一步操作。
+        var roleDesc = !string.IsNullOrEmpty(_currentSystemPrompt)
+            ? _currentSystemPrompt
+            : "你是 NAgent AI 研究助手。";
+
+        var prompt = $@"{roleDesc} 你已经执行了搜索，现在需要决定下一步操作。
 
 用户问题: {userInput}
 
@@ -340,7 +376,7 @@ public class LangChainAgentEngine : IAgentEngine
 
         try
         {
-            var response = await _llmClient.GenerateAsync(prompt, modelId, cancellationToken: cancellationToken);
+            var response = await _llmClient.GenerateAsync(prompt, modelId, cancellationToken: cancellationToken, systemPrompt: _currentSystemPrompt);
             var json = ExtractJson(response);
 
             if (!string.IsNullOrEmpty(json))
@@ -404,7 +440,7 @@ public class LangChainAgentEngine : IAgentEngine
         CancellationToken cancellationToken)
     {
         var context = BuildContext(session, userInput);
-        return await _llmClient.GenerateAsync(context, modelId, cancellationToken: cancellationToken);
+        return await _llmClient.GenerateAsync(context, modelId, cancellationToken: cancellationToken, systemPrompt: _currentSystemPrompt);
     }
 
     /// <summary>
@@ -421,7 +457,11 @@ public class LangChainAgentEngine : IAgentEngine
         var stepsSummary = string.Join("\n", allSteps.Select(s =>
             $"步骤 {s.StepNumber}: {s.ToolName} - {(s.Success ? "成功" : "失败")}"));
 
-        var prompt = $@"你是 NAgent AI 助手。用户提出了一个问题，你通过一系列 Skill/Tool 处理来获取信息。
+        var roleDesc2 = !string.IsNullOrEmpty(_currentSystemPrompt)
+            ? _currentSystemPrompt
+            : "你是 NAgent AI 助手。";
+
+        var prompt = $@"{roleDesc2} 用户提出了一个问题，你通过一系列 Skill/Tool 处理来获取信息。
 
 用户问题: {userInput}
 
@@ -434,7 +474,7 @@ public class LangChainAgentEngine : IAgentEngine
 请基于以上结果，直接回答用户的问题。如果结果不足以回答问题，请说明。
 回复:";
 
-        return await _llmClient.GenerateAsync(prompt, modelId, cancellationToken: cancellationToken);
+        return await _llmClient.GenerateAsync(prompt, modelId, cancellationToken: cancellationToken, systemPrompt: _currentSystemPrompt);
     }
 
     /// <summary>
@@ -666,7 +706,7 @@ public class LangChainAgentEngine : IAgentEngine
 {context}
 
 回复：";
-        return await _llmClient.GenerateAsync(prompt, modelId, cancellationToken: cancellationToken);
+        return await _llmClient.GenerateAsync(prompt, modelId, cancellationToken: cancellationToken, systemPrompt: _currentSystemPrompt);
     }
 
     /// <summary>

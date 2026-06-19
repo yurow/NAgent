@@ -17,7 +17,6 @@ public class YamlToolExecutor : IToolExecutor
 {
     private readonly ToolDefinition _toolDefinition;
     private readonly IWorkspaceManager _workspaceManager;
-    private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
 
     public string ToolName => _toolDefinition.Name;
@@ -30,7 +29,6 @@ public class YamlToolExecutor : IToolExecutor
     {
         _toolDefinition = toolDefinition ?? throw new ArgumentNullException(nameof(toolDefinition));
         _workspaceManager = workspaceManager ?? throw new ArgumentNullException(nameof(workspaceManager));
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(toolDefinition.ExecutionConfig.TimeoutSeconds) };
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -216,32 +214,13 @@ public class YamlToolExecutor : IToolExecutor
 
         try
         {
-            var handler = new HttpClientHandler
-            {
-                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 8,
-                // ⭐ 跳过 SSL 证书验证，避免自签名证书/过期证书导致连接失败
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            };
-            var client = new HttpClient(handler);
-            client.Timeout = TimeSpan.FromSeconds(20);
+            // ⭐ 复用全局共享 HttpClient，避免每次请求创建/销毁 Handler 导致内存泄漏和端口耗尽
+            var client = HttpClientManager.WebScraper;
+            using var cts = HttpClientManager.CreateTimeoutCts(TimeSpan.FromSeconds(20), cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            HttpClientManager.SetBrowserHeaders(request);
 
-            // ⭐ 完整的浏览器指纹头，避免被反爬拦截 403
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Add("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-            client.DefaultRequestHeaders.Add("Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
-            client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
-            client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
-            client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
-            client.DefaultRequestHeaders.Add("Connection", "keep-alive");
-            client.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
-            // 模拟从百度搜索点进来的
-            client.DefaultRequestHeaders.Add("Referer", "https://www.baidu.com/");
-
-            var response = await client.GetAsync(url, cancellationToken);
+            var response = await client.SendAsync(request, cts.Token);
 
             // ⭐ 对于非 200 的状态码，尝试读取内容（有些站点 403 但仍返回内容）
             if (!response.IsSuccessStatusCode)
@@ -292,8 +271,6 @@ public class YamlToolExecutor : IToolExecutor
             var output = $"标题: {title}\n来源: {url}\n\n{text}";
 
             _logger.LogInformation("[WebFetch] 抓取成功，文本长度: {Length}", text.Length);
-            handler.Dispose();
-            client.Dispose();
             return ToolExecutionResult.Ok(output);
         }
         catch (TaskCanceledException)
@@ -461,6 +438,7 @@ public class YamlToolExecutor : IToolExecutor
 
     /// <summary>
     /// 执行命令行
+    /// ⭐ 安全加固：参数值经过严格校验和转义，防止命令注入攻击
     /// </summary>
     private async Task<ToolExecutionResult> ExecuteCommandAsync(
         Dictionary<string, object> parameters,
@@ -471,10 +449,19 @@ public class YamlToolExecutor : IToolExecutor
         if (string.IsNullOrWhiteSpace(command))
             return ToolExecutionResult.Fail("命令未配置");
 
-        // 替换参数占位符
+        // ⭐ 替换参数占位符：每个参数值经过安全校验 + 双引号包裹，防止命令注入
         foreach (var param in parameters)
         {
-            command = command.Replace($"{{{param.Key}}}", param.Value?.ToString() ?? "");
+            var rawValue = param.Value?.ToString() ?? "";
+            var safeValue = SanitizeCommandArg(rawValue);
+            if (safeValue == null)
+            {
+                _logger.LogWarning("[Command] 参数 {Key} 包含非法字符，拒绝执行: {Value}",
+                    param.Key, rawValue.Length > 50 ? rawValue[..50] + "..." : rawValue);
+                return ToolExecutionResult.Fail(
+                    $"参数 '{param.Key}' 包含非法字符（引号/换行/空字节），命令执行已拒绝");
+            }
+            command = command.Replace($"{{{param.Key}}}", safeValue);
         }
 
         var psi = new ProcessStartInfo
@@ -551,6 +538,9 @@ public class YamlToolExecutor : IToolExecutor
             endpoint = endpoint.Replace($"{{{param.Key}}}", System.Web.HttpUtility.UrlEncode(param.Value?.ToString() ?? ""));
         }
 
+        // ⭐ 复用全局共享 HttpClient，通过 CancellationToken 实现独立超时
+        var timeout = TimeSpan.FromSeconds(_toolDefinition.ExecutionConfig.TimeoutSeconds);
+        using var cts = HttpClientManager.CreateTimeoutCts(timeout, cancellationToken);
         using var request = new HttpRequestMessage(
             method switch
             {
@@ -568,7 +558,7 @@ public class YamlToolExecutor : IToolExecutor
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
         }
 
-        var response = await _httpClient.SendAsync(request, cancellationToken);
+        var response = await HttpClientManager.Default.SendAsync(request, cts.Token);
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -645,6 +635,36 @@ public class YamlToolExecutor : IToolExecutor
         }
 
         return defaultValue;
+    }
+
+    /// <summary>
+    /// 命令行参数安全转义 — 防止命令注入攻击
+    ///
+    /// 防御策略（纵深防御）：
+    ///   1. 拒绝包含引号、换行、空字节的参数值（无法安全转义）
+    ///   2. 用双引号包裹参数值，使 &amp; | ; &gt; &lt; ^ % 等元字符变为字面量
+    ///   3. 对 cmd.exe 特殊字符 % 进行转义（%%），防止变量展开
+    ///
+    /// 返回 null 表示参数值不安全，应拒绝执行
+    /// </summary>
+    private static string? SanitizeCommandArg(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "\"\"";
+
+        // Layer 1: 拒绝无法安全转义的危险字符
+        // " — 可逃逸引号包裹
+        // \r \n — 换行注入（cmd.exe 中换行等同于命令分隔符）
+        // \0 — 空字节截断
+        if (value.Contains('"') || value.Contains('\r') || value.Contains('\n') || value.Contains('\0'))
+            return null;
+
+        // Layer 2: 转义 cmd.exe 变量展开字符 %
+        // 在 "..." 内部，%VAR% 仍会被展开，所以需要 %% 转义
+        var escaped = value.Replace("%", "%%");
+
+        // Layer 3: 双引号包裹 — 使 & | ; > < ^ 等元字符变为字面量
+        return $"\"{escaped}\"";
     }
 
     #endregion

@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NAgent.AgentApplication.Features.Projects.Commands;
 using NAgent.AgentApplication.Features.Projects.Queries;
@@ -10,6 +11,7 @@ namespace NAgent.Api.Controllers;
 /// 项目管理控制器
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class ProjectsController : ControllerBase
 {
